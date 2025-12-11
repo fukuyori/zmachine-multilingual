@@ -147,7 +147,6 @@
 (defun save-language-translations (&optional (code *current-language*))
   "Save translations for current language"
   (when (eq code :en)
-    (format t "English does not need translations.~%")
     (return-from save-language-translations nil))
   
   (let* ((lang (get-language code))
@@ -163,9 +162,7 @@
       (format out "(in-package :zmachine)~%~%")
       (maphash (lambda (en trans)
                  (format out "(add-trans ~S ~S)~%" en trans))
-               *translation-table*))
-    (format t "Saved ~D translations to ~A~%" 
-            (hash-table-count *translation-table*) filename)))
+               *translation-table*))))
 
 ;;; ============================================================
 ;;; API Integration
