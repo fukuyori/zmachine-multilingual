@@ -1,0 +1,5 @@
+run.lisp
+*.z3
+*.sav
+zmachine.zip
+/.vscode

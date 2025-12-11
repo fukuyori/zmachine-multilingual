@@ -1,63 +1,51 @@
 # Z-machine Interpreter
 
-A Z-machine interpreter implemented in **Common Lisp**, providing multilingual support for classic interactive fiction titles such as *Zork*.
-This project enables gameplay in **ten languages**, with optional automatic translation powered by DeepL or Claude.
+Common Lispで実装されたZ-machineインタプリタです。Zorkなどのテキストアドベンチャーゲームを10言語で楽しめます。
 
----
+## 対応言語
 
-## 📚 Supported Languages
+| Code | Language | Native |
+|------|----------|--------|
+| :en | English | English |
+| :ja | Japanese | 日本語 |
+| :ko | Korean | 한국어 |
+| :zh-hans | Simplified Chinese | 简体中文 |
+| :zh-hant | Traditional Chinese | 繁體中文 |
+| :fr | French | Français |
+| :de | German | Deutsch |
+| :es | Spanish | Español |
+| :pt | Portuguese | Português |
+| :ru | Russian | Русский |
 
-| Code     | Language            | Native    |
-| -------- | ------------------- | --------- |
-| :en      | English             | English   |
-| :ja      | Japanese            | 日本語       |
-| :ko      | Korean              | 한국어       |
-| :zh-hans | Simplified Chinese  | 简体中文      |
-| :zh-hant | Traditional Chinese | 繁體中文      |
-| :fr      | French              | Français  |
-| :de      | German              | Deutsch   |
-| :es      | Spanish             | Español   |
-| :pt      | Portuguese          | Português |
-| :ru      | Russian             | Русский   |
+## 機能
 
----
+- Z-machine version 1-5 対応
+- 10言語バイリンガル表示
+- DeepL/Claude APIによる自動翻訳
+- 翻訳の自動キャッシュ・永続化
+- ゲームのセーブ/リストア
 
-## ✨ Features
+## 必要環境
 
-* Full support for **Z-machine versions 1–5**
-* **Bilingual output** with dynamic language switching
-* **Automatic machine translation** via DeepL or Claude APIs
-* Persistent caching of translated strings
-* Built-in **save/restore** functionality
-* Extensible translation system with user-modifiable dictionaries
+- SBCL (Steel Bank Common Lisp)
+- curl (自動翻訳に使用)
 
----
-
-## 🔧 Requirements
-
-* **SBCL** (Steel Bank Common Lisp)
-* **curl** (used for translation API requests)
-
----
-
-## 📦 Installation
+## インストール
 
 ```bash
 unzip zmachine.zip
 cd zmachine
 ```
 
----
+## 使い方
 
-## 🚀 Usage
-
-### Basic Launch
+### 基本
 
 ```bash
 sbcl --load run-zork.lisp
 ```
 
-### Manual Setup
+または手動で:
 
 ```lisp
 (require :asdf)
@@ -65,91 +53,85 @@ sbcl --load run-zork.lisp
 (asdf:load-system :zmachine)
 (in-package :zmachine)
 
-;; List available languages
-(list-languages)
+;; 言語を選択
+(list-languages)      ; 利用可能な言語を表示
+(set-language :ja)    ; 日本語を選択
 
-;; Set active language
-(set-language :ja)    ; Japanese
-
-;; Load and run a story file
+;; ゲーム開始
 (load-story "zork1.z3")
 (run)
 ```
 
----
-
-## 🌐 Switching Languages
-
-Language can be changed at any time, including during gameplay:
+### 言語の変更
 
 ```lisp
-(set-language :fr)    ; Switch to French
-(set-language :en)    ; English only, no translation
+;; ゲーム中でも変更可能
+(set-language :fr)    ; フランス語に変更
+(set-language :en)    ; 英語のみ（翻訳なし）
 ```
 
----
-
-## 🤖 Automatic Translation Setup
+### 自動翻訳の設定
 
 ```lisp
-;; DeepL API (recommended; free tier available)
+;; DeepL API (無料枠あり、推奨)
 (setup-deepl "your-api-key")
 
-;; Or use the Claude API
+;; または Claude API
 (setup-claude-api "your-api-key")
 ```
 
-A free DeepL API key is available at:
-[https://www.deepl.com/pro-api](https://www.deepl.com/pro-api)
+DeepL APIキーは https://www.deepl.com/pro-api で無料取得できます。
 
----
-
-## 📝 Translation Management
+### 翻訳管理
 
 ```lisp
-(show-untranslated)          ; Display untranslated strings
-(quick-translate 1 "text")   ; Add a translation manually
-(auto-translate-all)         ; Translate all remaining entries
-(translation-stats)          ; Show statistics
-(save-language-translations) ; Persist translations to disk
+;; 未翻訳テキストを表示
+(show-untranslated)
+
+;; 手動で翻訳を追加
+(quick-translate 1 "翻訳テキスト")
+
+;; 未翻訳をすべて自動翻訳
+(auto-translate-all)
+
+;; 統計を表示
+(translation-stats)
+
+;; 翻訳を保存
+(save-language-translations)
 ```
 
----
+### セーブ/リストア
 
-## 💾 Save / Restore
-
-Within the game:
-
+ゲーム内で:
 ```
 >save
 Save filename: mygame
 Game saved.
 
->restore
+>restore  
 Save filename: mygame
 Game restored.
 ```
 
----
-
-## 📁 Project Structure
+## ファイル構成
 
 ```
 zmachine/
-├── packages.lisp           ; Package definitions
-├── memory.lisp             ; Memory management, save/restore logic
-├── text.lisp               ; Text rendering
-├── objects.lisp            ; Object tree and hierarchy
-├── dictionary.lisp         ; Dictionary and lexical handling
-├── decode.lisp             ; Instruction decoder
-├── opcodes.lisp            ; 0OP/1OP/2OP opcodes
-├── opcodes-var.lisp        ; VAR opcodes
-├── execute.lisp            ; Core execution loop
-├── translate.lisp          ; Translation subsystem
-├── languages.lisp          ; Language registry
-├── run-zork.lisp           ; Startup script
-├── zmachine.asd            ; ASDF system definition
-└── translations/           ; Translation files
+├── packages.lisp           # パッケージ定義
+├── memory.lisp             # メモリ管理、セーブ/リストア
+├── text.lisp               # テキスト出力
+├── objects.lisp            # オブジェクトツリー
+├── dictionary.lisp         # 辞書処理
+├── decode.lisp             # 命令デコード
+├── opcodes.lisp            # 0OP/1OP/2OP命令
+├── opcodes-var.lisp        # VAR命令
+├── execute.lisp            # 実行ループ
+├── translate.lisp          # 翻訳システム
+├── languages.lisp          # 言語定義
+├── run-zork.lisp           # 起動スクリプト
+├── zmachine.asd            # ASDFシステム定義
+└── translations/           # 翻訳データ
     ├── translations-ja.lisp
     ├── translations-ko.lisp
     ├── translations-zh-hans.lisp
@@ -161,23 +143,16 @@ zmachine/
     └── translations-ru.lisp
 ```
 
----
+## 翻訳データ
 
-## 🗂 Translation Files
+- 各言語の翻訳は `translations/translations-XX.lisp` に保存
+- ユーザーの追加翻訳は作業ディレクトリの `translations-XX.lisp` に保存
+- 次回起動時に自動的に読み込まれます
 
-* Each language’s translations are stored in `translations/translations-XX.lisp`
-* User-added translations are written to `translations-XX.lisp` in the working directory
-* These are automatically loaded on startup
+## 翻訳への貢献
 
----
+翻訳ファイルを編集して、プルリクエストをお送りください。
 
-## 🤝 Contributing
+## ライセンス
 
-Contributions are welcome.
-To help improve translations, edit the corresponding file under `translations/` and submit a pull request.
-
----
-
-## 📄 License
-
-This project is licensed under the **MIT License**.
+MIT License

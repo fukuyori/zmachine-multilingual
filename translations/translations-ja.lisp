@@ -16,6 +16,8 @@
 (add-trans "Forest Path" "森の小道")
 (add-trans "Clearing" "開けた場所")
 (add-trans "Canyon View" "峡谷の眺め")
+(add-trans "You are at the top of the Great Canyon on its west wall. From here there is a marvelous view of the canyon and parts of the Frigid River upstream. Across the canyon, the walls of the White Cliffs join the mighty ramparts of the Flathead Mountains to the east. Following the Canyon upstream to the north, Aragain Falls may be seen, complete with rainbow. The mighty Frigid River flows out from a great dark cavern. To the west and south can be seen an immense forest, stretching for miles around. A path leads northwest. It is possible to climb down into the canyon from here."
+           "あなたは大峡谷の西壁の頂上にいます。ここからは峡谷と上流のフリジッド川の一部の素晴らしい景色が見えます。峡谷の向こう側では、白い崖の壁が東のフラットヘッド山脈の巨大な城壁と合流しています。峡谷を北に上流へたどると、虹を伴うアラゲイン滝が見えます。巨大なフリジッド川は大きな暗い洞窟から流れ出ています。西と南には何マイルも広がる広大な森が見えます。北西に小道があります。ここから峡谷に降りることができます。")
 (add-trans "Rocky Ledge" "岩棚")
 (add-trans "Cave" "洞窟")
 (add-trans "Maze" "迷路")

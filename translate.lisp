@@ -53,8 +53,8 @@
     (auto-save-check)))
 
 (defun auto-save-check ()
-  "Save if modified"
-  (when *translations-modified*
+  "Save if modified and auto-save is enabled"
+  (when (and *auto-save-translations* *translations-modified*)
     (save-language-translations)
     (setf *translations-modified* nil)))
 
@@ -89,6 +89,7 @@
         (when api-result
           (setf (gethash trimmed *translation-table*) api-result)
           (setf *translations-modified* t)
+          (auto-save-check)  ; Save immediately after API translation
           (return-from translate-text api-result))))
     
     ;; Log untranslated

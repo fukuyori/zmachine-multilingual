@@ -236,10 +236,11 @@
         (when (cdr pair)
           (push (cdr pair) translations)))
       
-      ;; Print translations without separator
+      ;; Print translations (one newline between English and translation)
       (when translations
         (dolist (trans (reverse translations))
-          (format *standard-output* "~A~%" trans)))))
+          (format *standard-output* "~A~%" trans))
+        (force-output *standard-output*))))
   (setf *block-buffer* nil))
 
 (defun zm-newline ()

@@ -93,16 +93,20 @@
     (if (eq code :en)
         (progn
           (setf *bilingual-mode* nil)
+          (setf *auto-save-translations* nil)
           (format t "Language: ~A (~A)~%"
                   (language-name lang) (language-native-name lang))
           (format t "Bilingual mode: disabled (English only)~%"))
         (progn
           (setf *bilingual-mode* t)
           (load-language-translations code)
+          (setf *auto-save-translations* t)  ; Enable auto-save
+          (setf *translations-modified* nil)
           (format t "Language: ~A (~A)~%"
                   (language-name lang) (language-native-name lang))
           (format t "Bilingual mode: enabled~%")
-          (format t "Translations loaded: ~D~%" (hash-table-count *translation-table*))))
+          (format t "Translations loaded: ~D~%" (hash-table-count *translation-table*))
+          (format t "Auto-save: enabled~%")))
     code))
 
 ;;; ============================================================
