@@ -2,3 +2,4 @@ run.lisp
 *.z3
 *.sav
 /.vscode
+zmachine.zip

@@ -180,26 +180,64 @@
         (deepl-request-powershell text target-lang))))
 
 (defun deepl-request-curl (text target-lang)
-  "DeepL request via curl"
-  (let ((output (make-string-output-stream)))
+  "DeepL request via curl (supports long text)"
+  (let* ((temp-dir (or (sb-ext:posix-getenv "TEMP")
+                       (sb-ext:posix-getenv "TMP")
+                       "/tmp"))
+         (input-file (format nil "~A/deepl-input.txt" temp-dir))
+         (output-file (format nil "~A/deepl-output.txt" temp-dir)))
     (handler-case
         (progn
+          ;; Write POST data to input file
+          (with-open-file (out input-file :direction :output 
+                                          :if-exists :supersede
+                                          :external-format :latin-1)
+            (format out "auth_key=~A&text=~A&source_lang=EN&target_lang=~A"
+                    *deepl-api-key* (url-encode text) target-lang))
+          ;; Run curl with output to file
           (sb-ext:run-program "curl"
                               (list "-s" "-X" "POST"
                                     "https://api-free.deepl.com/v2/translate"
-                                    "-d" (format nil "auth_key=~A" *deepl-api-key*)
-                                    "-d" (format nil "text=~A" (url-encode text))
-                                    "-d" "source_lang=EN"
-                                    "-d" (format nil "target_lang=~A" target-lang))
-                              :output output :error nil :search t)
-          (get-output-stream-string output))
-      (error () nil))))
+                                    "-d" (format nil "@~A" input-file)
+                                    "-o" output-file)
+                              :search t
+                              :wait t)
+          ;; Read result from output file
+          (let ((result nil))
+            (when (probe-file output-file)
+              (with-open-file (in output-file :direction :input
+                                              :external-format :utf-8
+                                              :if-does-not-exist nil)
+                (when in
+                  (setf result (make-string (file-length in)))
+                  (read-sequence result in))))
+            ;; Clean up
+            (when (probe-file input-file) (delete-file input-file))
+            (when (probe-file output-file) (delete-file output-file))
+            result))
+      (error (e) 
+        (format t "~&[DeepL error: ~A]~%" e)
+        nil))))
 
 (defun deepl-request-powershell (text target-lang)
-  "DeepL request via PowerShell"
-  (let ((script (format nil "$body=@{auth_key='~A';text='~A';source_lang='EN';target_lang='~A'};Invoke-RestMethod -Uri 'https://api-free.deepl.com/v2/translate' -Method Post -Body $body|ConvertTo-Json"
-                        *deepl-api-key* (ps-escape text) target-lang)))
-    (run-powershell script)))
+  "DeepL request via PowerShell (supports long text)"
+  (let* ((temp-file (format nil "~A\\deepl-temp.txt" 
+                           (or (sb-ext:posix-getenv "TEMP") ".")))
+         (script (format nil 
+"$text = Get-Content -Path '~A' -Raw -Encoding UTF8
+$body = @{auth_key='~A'; text=$text; source_lang='EN'; target_lang='~A'}
+Invoke-RestMethod -Uri 'https://api-free.deepl.com/v2/translate' -Method Post -Body $body | ConvertTo-Json"
+                         temp-file *deepl-api-key* target-lang)))
+    ;; Write text to temp file
+    (with-open-file (out temp-file :direction :output 
+                                   :if-exists :supersede
+                                   :external-format :utf-8)
+      (write-string text out))
+    (let ((result (run-powershell script)))
+      ;; Clean up
+      (when (probe-file temp-file)
+        (delete-file temp-file))
+      result)))
 
 (defun claude-translate (text)
   "Translate via Claude API"
@@ -270,14 +308,30 @@
       (error () nil))))
 
 (defun url-encode (str)
-  "URL encode string"
+  "URL encode string (UTF-8 safe)"
   (with-output-to-string (out)
     (loop for c across str
           for code = (char-code c)
           do (cond
                ((or (alphanumericp c) (find c "-_.~")) (write-char c out))
                ((char= c #\Space) (write-string "%20" out))
-               (t (format out "%~2,'0X" code))))))
+               ((< code 128) (format out "%~2,'0X" code))
+               ;; UTF-8 encode for non-ASCII
+               ((< code #x800)
+                (format out "%~2,'0X%~2,'0X"
+                        (logior #xC0 (ash code -6))
+                        (logior #x80 (logand code #x3F))))
+               ((< code #x10000)
+                (format out "%~2,'0X%~2,'0X%~2,'0X"
+                        (logior #xE0 (ash code -12))
+                        (logior #x80 (logand (ash code -6) #x3F))
+                        (logior #x80 (logand code #x3F))))
+               (t
+                (format out "%~2,'0X%~2,'0X%~2,'0X%~2,'0X"
+                        (logior #xF0 (ash code -18))
+                        (logior #x80 (logand (ash code -12) #x3F))
+                        (logior #x80 (logand (ash code -6) #x3F))
+                        (logior #x80 (logand code #x3F))))))))
 
 (defun ps-escape (str)
   "Escape for PowerShell"
