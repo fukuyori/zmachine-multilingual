@@ -69,6 +69,14 @@ cd zmachine-multilingual
 
 run-zork.lisp の以下の箇所を修正し、SBCL で実行します。
 
+- ストーリーファイルの設定
+
+```lisp
+;; プレイするストーリーファイルのパスを指定
+(load-story "zork1.z3")           ; 同じディレクトリにある場合
+(load-story "/path/to/zork1.z3")  ; フルパスで指定する場合
+```
+
 - 言語の変更
 
 ```lisp

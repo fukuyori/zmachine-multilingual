@@ -69,6 +69,14 @@ cd zmachine-multilingual
 
 Edit the following sections in run-zork.lisp and run with SBCL.
 
+- Set up story file
+
+```lisp
+;; Specify the path to the story file you want to play
+(load-story "zork1.z3")           ; If in the same directory
+(load-story "/path/to/zork1.z3")  ; Specify with full path
+```
+
 - Change language
 
 ```lisp
