@@ -93,11 +93,14 @@
 (defop *opcodes-var* 8 push (operands)
   (write-variable 0 (first operands)))
 
-;;; VAR:9 - pull (variable) [V1-5] / pull stack -> (result) [V6]
+;;; VAR:9 - pull (variable) [V1-5, V7-8] / pull stack -> (result) [V6 only]
 (defop *opcodes-var* 9 pull (operands)
-  (if (<= (zm-version *zm*) 5)
-      (write-variable (first operands) (read-variable 0))
-      (store-result (fetch-store) (read-variable 0))))
+  ;; The store form belongs to V6 alone. Treating V7 and V8 as V6 consumed a
+  ;; store byte that was not there and popped the stack one time too many,
+  ;; which lost instruction alignment and ended in a stack underflow.
+  (if (= (zm-version *zm*) 6)
+      (store-result (fetch-store) (read-variable 0))
+      (write-variable (first operands) (read-variable 0))))
 
 ;;; VAR:10 - split_window lines
 (defop *opcodes-var* 10 split_window (operands)
@@ -155,8 +158,12 @@
 ;;; VAR:22 - read_char 1 time routine -> (result) [V4+]
 (defop *opcodes-var* 22 read_char (operands)
   (declare (ignore operands))
+  (when (fboundp 'before-input)
+    (funcall 'before-input))
   (force-output)
-  (let ((char (read-char)))
+  ;; End of input is not an error: report a newline, as if the player had
+  ;; pressed return
+  (let ((char (read-char *standard-input* nil #\Newline)))
     (store-result (fetch-store) (char-to-zscii char))))
 
 ;;; VAR:23 - scan_table x table len form -> (result) [V4+]
@@ -324,3 +331,103 @@
     ;; 1 = can print, 2 = can receive, 3 = both
     (store-result (fetch-store)
                   (if (and (plusp code) (< code #x110000)) 3 0))))
+
+;;; ------------------------------------------------------------
+;;; Version 6 extended opcodes
+;;;
+;;; This interpreter has no graphics and no real windows, so these are
+;;; stubs. What matters is that each one consumes exactly the store byte
+;;; or branch byte the standard gives it: skipping those is what loses
+;;; instruction alignment. Store and branch columns are taken from the
+;;; opcode table in the Z-Machine Standards Document 1.1, section 14.
+;;; ------------------------------------------------------------
+
+;;; EXT:5 - draw_picture picture-number y x [V6]
+(defop *opcodes-ext* 5 draw_picture (operands)
+  (declare (ignore operands)))
+
+;;; EXT:6 - picture_data picture-number array ?(label) [V6]
+(defop *opcodes-ext* 6 picture_data (operands)
+  (declare (ignore operands))
+  ;; No pictures are available, so the picture number is never valid
+  (do-branch nil))
+
+;;; EXT:7 - erase_picture picture-number y x [V6]
+(defop *opcodes-ext* 7 erase_picture (operands)
+  (declare (ignore operands)))
+
+;;; EXT:8 - set_margins left right window [V6]
+(defop *opcodes-ext* 8 set_margins (operands)
+  (declare (ignore operands)))
+
+;;; EXT:13 - set_true_colour foreground background [window] [V5+]
+(defop *opcodes-ext* 13 set_true_colour (operands)
+  (declare (ignore operands)))
+
+;;; EXT:16 - move_window window y x [V6]
+(defop *opcodes-ext* 16 move_window (operands)
+  (declare (ignore operands)))
+
+;;; EXT:17 - window_size window y x [V6]
+(defop *opcodes-ext* 17 window_size (operands)
+  (declare (ignore operands)))
+
+;;; EXT:18 - window_style window flags operation [V6]
+(defop *opcodes-ext* 18 window_style (operands)
+  (declare (ignore operands)))
+
+;;; EXT:19 - get_wind_prop window property-number -> (result) [V6]
+(defop *opcodes-ext* 19 get_wind_prop (operands)
+  (declare (ignore operands))
+  (store-result (fetch-store) 0))
+
+;;; EXT:20 - scroll_window window pixels [V6]
+(defop *opcodes-ext* 20 scroll_window (operands)
+  (declare (ignore operands)))
+
+;;; EXT:21 - pop_stack items stack [V6]
+(defop *opcodes-ext* 21 pop_stack (operands)
+  (declare (ignore operands)))
+
+;;; EXT:22 - read_mouse array [V6]
+(defop *opcodes-ext* 22 read_mouse (operands)
+  ;; There is no mouse; report position 1,1 with no buttons pressed
+  (let ((array (first operands)))
+    (when (and array (plusp array))
+      (zm-write-word array 1)
+      (zm-write-word (+ array 2) 1)
+      (zm-write-word (+ array 4) 0)
+      (zm-write-word (+ array 6) 0))))
+
+;;; EXT:23 - mouse_window window [V6]
+(defop *opcodes-ext* 23 mouse_window (operands)
+  (declare (ignore operands)))
+
+;;; EXT:24 - push_stack value stack ?(label) [V6]
+(defop *opcodes-ext* 24 push_stack (operands)
+  (declare (ignore operands))
+  ;; User stacks are not provided, so the push never succeeds
+  (do-branch nil))
+
+;;; EXT:25 - put_wind_prop window property-number value [V6]
+(defop *opcodes-ext* 25 put_wind_prop (operands)
+  (declare (ignore operands)))
+
+;;; EXT:26 - print_form formatted-table [V6]
+(defop *opcodes-ext* 26 print_form (operands)
+  (declare (ignore operands)))
+
+;;; EXT:27 - make_menu number table ?(label) [V6]
+(defop *opcodes-ext* 27 make_menu (operands)
+  (declare (ignore operands))
+  ;; Menus are not provided
+  (do-branch nil))
+
+;;; EXT:28 - picture_table table [V6]
+(defop *opcodes-ext* 28 picture_table (operands)
+  (declare (ignore operands)))
+
+;;; EXT:29 - buffer_screen mode -> (result) [V6]
+(defop *opcodes-ext* 29 buffer_screen (operands)
+  (declare (ignore operands))
+  (store-result (fetch-store) 0))

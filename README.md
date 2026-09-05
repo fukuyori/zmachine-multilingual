@@ -19,7 +19,7 @@ A Z-machine interpreter written in Common Lisp. Play classic text adventures lik
 
 ## Features
 
-* Z-machine version 1-5 support (Version 3 and 5 verified against 34 story files)
+* Z-machine version 1-8 support, verified against 34 story files
 * Bilingual display (English + translation)
 * Status line with location, score and turn count (V1-3)
 * Original, translation and status line styled apart in the terminal
@@ -53,18 +53,20 @@ The [IF Archive](https://ifarchive.org/) hosts many Z-machine compatible games.
 ### File Naming Conventions
 
 * `.z3` - Z-machine version 3 (Infocom classics including ZORK)
+* `.z4` - Z-machine version 4 (larger Infocom games)
 * `.z5` - Z-machine version 5 (later Infocom games)
+* `.z6` - Z-machine version 6 (graphical games; text only here)
 * `.z8` - Z-machine version 8 (extended format)
 
 Tested against 34 story files:
 
-| Version | Status |
-|:--|:--|
-| 3 (`.z3`) | Every story in the test set plays |
-| 4 (`.z4`) | Plays; timed input is ignored |
-| 5 (`.z5`) | Every story in the test set plays |
-| 6 (`.z6`) | Not supported - needs graphics and multiple windows |
-| 8 (`.z8`) | Not working yet |
+| Version | Stories | Status |
+|:--|--:|:--|
+| 3 (`.z3`) | 17 | All play |
+| 4 (`.z4`) | 3 | All play; timed input is ignored |
+| 5 (`.z5`) | 8 | All play |
+| 6 (`.z6`) | 2 | Play as text; no graphics, and the upper window is drawn as a status bar rather than laid out in pixels |
+| 8 (`.z8`) | 1 | Plays |
 
 Place story files in the same directory as the interpreter, or specify the full path when loading.
 
@@ -287,10 +289,15 @@ can do and how large the screen is, and lay out their status line accordingly.
 | `*screen-rows*` | `24` | Screen height reported to the story |
 | `*interpreter-number*` | `6` | Interpreter identity (6 = IBM PC); some stories pick their character set from this |
 | `*strict-opcodes*` | `NIL` | `T` stops the story on an unimplemented opcode instead of skipping it |
+| `*output-buffer-limit*` | `65536` | Characters kept in the Z-machine output buffer before it is discarded |
 
 An unimplemented opcode is reported once and skipped. Skipping is a guess - the
 operands were consumed but a store or branch byte may not have been - so set
 `*strict-opcodes*` to `T` when tracking down where a story goes wrong.
+
+Version 6 needs graphics and pixel-positioned windows, neither of which exist
+here. Its stories run and stay readable, but pictures are absent and the upper
+window becomes a status bar.
 
 Version 4 and 5 stories draw their status line into the upper window. There is
 no screen model here, so what the story writes there is captured and printed as
@@ -501,7 +508,7 @@ zmachine-multilingual/
 
 ## Changelog
 
-Current version: **0.5.0**. See [CHANGELOG.md](CHANGELOG.md) for the release history.
+Current version: **0.6.1**. See [CHANGELOG.md](CHANGELOG.md) for the release history.
 
 ## Contributing
 

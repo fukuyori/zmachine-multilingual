@@ -1,6 +1,6 @@
 ;;;; Japanese translations for Z-machine
 ;;;; Language: Japanese (日本語)
-;;;; Generated: 3997578862
+;;;; Generated: 3997584163
 
 (in-package :zmachine)
 
@@ -167,12 +167,14 @@
 (add-trans "You can't see any canary here!" "ここにはカナリアなんてどこにもいないよ！")
 (add-trans "You can't see any clockwork here!" "ここには時計仕掛けの部品なんてどこにも見えない！")
 (add-trans "You can't see any egg here!" "ここには卵が一つも見当たらない！")
+(add-trans "You can't see any mailbox here!" "ここには郵便受けは見当たりません！")
 (add-trans "You can't see any such thing." "そのようなものは見当たりません。")
 (add-trans "You don't have the jewel-encrusted egg." "宝石がちりばめられた卵は、あなたの手にはありません。")
 (add-trans "You hear in the distance the chirping of a song bird." "遠くから、小鳥のさえずりが聞こえてくる。")
 (add-trans "You would need a machete to go further west." "さらに西へ進むには、マチェーテが必要になるだろう。")
 (add-trans "Your score is 0 (total of 350 points), in 0 moves." "あなたのスコアは 0（合計 350 ポイント）、移動回数は 0 です。")
 (add-trans "Your score is 0 (total of 350 points), in 1 move." "あなたのスコアは 0（合計 350 ポイント）で、1 回の移動です。")
+(add-trans "Your score is 0 (total of 350 points), in 2 moves." "あなたのスコアは 0（合計 350 ポイント）で、2 回の移動です。")
 (add-trans "Your score is 5 (total of 350 points), in 25 moves." "スコアは5（合計350点）、手数は25手です。")
 (add-trans "Your score is 5 (total of 350 points), in 66 moves." "スコアは5（合計350点）で、66手でした。")
 (add-trans "Your sword is glowing with a faint blue glow." "あなたの剣がかすかに青く光っています。")

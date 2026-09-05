@@ -72,6 +72,7 @@
    #:*screen-rows*
    #:*interpreter-number*
    #:*strict-opcodes*
+   #:*output-buffer-limit*
 
    ;; Terminal appearance
    #:*ansi-enabled*

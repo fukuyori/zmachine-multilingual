@@ -99,13 +99,22 @@
 ;;; Packed Address Handling
 ;;; ============================================================
 
+(defun header-routine-offset ()
+  "Routine offset in words, V6-7 only"
+  (logior (ash (zm-read-byte #x28) 8) (zm-read-byte #x29)))
+
+(defun header-string-offset ()
+  "String offset in words, V6-7 only"
+  (logior (ash (zm-read-byte #x2A) 8) (zm-read-byte #x2B)))
+
 (defun unpack-routine-addr (packed-addr)
   "Convert packed routine address to byte address"
   (let ((version (zm-version *zm*)))
     (cond
       ((<= version 3) (* packed-addr 2))
       ((<= version 5) (* packed-addr 4))
-      ((<= version 7) (* packed-addr 4))  ; + routine offset
+      ;; V6-7 scale by 4 and add the offset from the header
+      ((<= version 7) (+ (* packed-addr 4) (* 8 (header-routine-offset))))
       (t (* packed-addr 8)))))
 
 (defun unpack-string-addr (packed-addr)
@@ -114,7 +123,7 @@
     (cond
       ((<= version 3) (* packed-addr 2))
       ((<= version 5) (* packed-addr 4))
-      ((<= version 7) (* packed-addr 4))  ; + string offset
+      ((<= version 7) (+ (* packed-addr 4) (* 8 (header-string-offset))))
       (t (* packed-addr 8)))))
 
 ;;; ============================================================
@@ -310,6 +319,9 @@
         ;; Set as current instance
         (setf *zm* zm)
         
+        ;; V6 starts by calling a routine rather than jumping to an address
+        (start-story zm)
+
         ;; Print loading info
         (format t "~&Loaded Z-machine version ~D story file~%" (zm-version zm))
         (format t "  Dynamic memory: 0 - ~X~%" (zm-dynamic-end zm))
@@ -317,6 +329,16 @@
         (format t "  Initial PC: ~X~%" (zm-pc zm))
         
         zm))))
+
+(defun start-story (zm)
+  "Begin execution.
+In V1-5 and V7-8 the word at $06 is the address of the first instruction.
+In V6 it is the packed address of the main routine, which has to be called."
+  (if (= (zm-version zm) 6)
+      (let ((packed (zm-pc zm)))
+        (setf (zm-pc zm) 0)
+        (do-call packed nil nil))
+      zm))
 
 (defun reset-story ()
   "Reset the story to initial state"
@@ -329,6 +351,7 @@
     
     ;; Reset PC
     (setf (zm-pc *zm*) (header-initial-pc))
+    (start-story *zm*)
     
     ;; Clear stack and call stack
     (setf (fill-pointer (zm-stack *zm*)) 0)

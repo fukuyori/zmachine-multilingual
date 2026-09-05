@@ -168,8 +168,13 @@
 
 ;;; 2OP:28 - throw value stack-frame [V5+]
 (defop *opcodes-2op* 28 throw (operands)
-  (declare (ignore operands))
-  (error "throw not implemented"))
+  ;; Undo the call stack down to the depth that catch reported, then return
+  ;; from the routine that was running at that point.
+  (let ((value (first operands))
+        (depth (second operands)))
+    (loop while (> (length (zm-call-stack *zm*)) depth)
+          do (pop (zm-call-stack *zm*)))
+    (do-return value)))
 
 ;;; ============================================================
 ;;; 1OP Opcodes (0x00 - 0x0F in short form)

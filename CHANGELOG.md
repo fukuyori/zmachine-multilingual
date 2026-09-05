@@ -5,6 +5,63 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.1] - 2026-09-05
+
+Versions 6 and 8 now run. All 34 story files in the test set play.
+
+### Fixed
+
+* **Version 8 stories could not run.** `pull` stores its result in Version 6
+  only, but the version test was `<= 5`, so Versions 7 and 8 took the Version 6
+  path. That consumed a store byte which was not there, losing instruction
+  alignment, and popped the stack once too often. `advent.z8` died with "Stack
+  underflow".
+* **Version 6 stories started at the wrong address.** In Version 6 the word at
+  $06 is the packed address of the `main` routine and has to be *called*; the
+  loader jumped to it as a byte address instead. `zork0.z6` broke on its very
+  first instruction.
+* **The routine and string offsets were ignored for Versions 6 and 7.** Packed
+  addresses now add the offsets from $28 and $2A.
+* **`throw` was not implemented** and raised an error. It now unwinds the call
+  stack to the depth `catch` reported and returns from that routine.
+* **The Z-machine output buffer grew without limit.** Every character the story
+  printed was appended to a buffer that nothing ever read and only `reset-story`
+  discarded, so a story that printed enough exhausted the heap. It is now capped
+  at `*output-buffer-limit*` characters (64K).
+* **`read_char` raised an error at end of input.** It now reports a newline.
+* Version 6 addresses the cursor in pixels rather than character cells, so a
+  story could ask for a row number far past the end of a text screen. Captured
+  upper window rows are bounded.
+
+### Added
+
+* **The Version 6 extended opcodes as stubs**: `draw_picture`, `picture_data`,
+  `erase_picture`, `set_margins`, `set_true_colour`, `move_window`,
+  `window_size`, `window_style`, `get_wind_prop`, `scroll_window`, `pop_stack`,
+  `read_mouse`, `mouse_window`, `push_stack`, `put_wind_prop`, `print_form`,
+  `make_menu`, `picture_table` and `buffer_screen`. There are no graphics and no
+  real windows here, so what matters is that each one consumes exactly the store
+  or branch byte the standard gives it - skipping those is what loses
+  instruction alignment. The store and branch columns were taken from the opcode
+  table in the Z-Machine Standards Document 1.1, section 14.
+
+### Verified
+
+| Version | Stories | Result |
+|:--|--:|:--|
+| 3 | 17 | All play |
+| 4 | 3 | All play |
+| 5 | 8 | All play |
+| 6 | 2 | Play as text |
+| 8 | 1 | Plays |
+
+### Known limitations
+
+* Version 6 graphics and pixel-positioned windows are not reproduced. Stories
+  run and stay readable, but pictures are absent and the upper window is drawn
+  as a status bar rather than laid out in pixels.
+* Version 4 timed input (the extra operands of `read`) is still ignored.
+
 ## [0.5.0] - 2026-09-05
 
 Version 5 stories now run. Verified against 34 story files: every Version 3

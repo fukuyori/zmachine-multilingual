@@ -337,33 +337,57 @@ has to be picked up explicitly before the translations are printed."
                 (8 nil)
                 (otherwise nil))))
 
+(defvar *output-buffer-limit* 65536
+  "Characters kept in the Z-machine output buffer before it is discarded.
+Nothing reads the buffer back today, so letting it grow with every character
+the story ever printed is simply a leak - a story stuck in a printing loop
+exhausted the heap.")
+
+(defvar *output-buffer-count* 0
+  "Characters written to the output buffer since it was last discarded")
+
+(defun buffer-game-output (count)
+  "Account for COUNT characters written to the Z-machine output buffer"
+  (incf *output-buffer-count* count)
+  (when (> *output-buffer-count* *output-buffer-limit*)
+    (get-output-stream-string (zm-output-buffer *zm*))
+    (setf *output-buffer-count* 0)))
+
 (defvar *current-window* 0
   "Window the story is writing to: 0 = main text, 1 = upper window")
 
 (defvar *upper-window-height* 0
   "Number of lines the story reserved for the upper window")
 
-(defvar *upper-window-rows* nil
+(defvar *upper-window-rows*
+  (make-array 0 :adjustable t :fill-pointer 0)
   "Rows of the upper window, as adjustable strings")
 
 (defvar *upper-window-row* 0 "Cursor row in the upper window")
 (defvar *upper-window-col* 0 "Cursor column in the upper window")
 
+(defvar *upper-window-max-rows* 32
+  "Upper bound on captured rows. Version 6 addresses the cursor in pixels
+rather than character cells, so a story can ask for a row number far beyond
+anything a text screen has.")
+
 (defun upper-window-row (n)
   "Row N of the upper window, created on demand"
-  (loop while (<= (length *upper-window-rows*) n)
-        do (setf *upper-window-rows*
-                 (append *upper-window-rows*
-                         (list (make-array 0 :element-type 'character
-                                             :adjustable t :fill-pointer 0)))))
-  (nth n *upper-window-rows*))
+  (loop while (<= (fill-pointer *upper-window-rows*) n)
+        do (vector-push-extend (make-array 0 :element-type 'character
+                                            :adjustable t :fill-pointer 0)
+                               *upper-window-rows*))
+  (aref *upper-window-rows* n))
 
 (defun upper-window-put (char)
   "Write one character at the upper window cursor"
   (if (char= char #\Newline)
-      (progn (incf *upper-window-row*)
+      (progn (setf *upper-window-row*
+                   (min (1+ *upper-window-row*) (1- *upper-window-max-rows*)))
              (setf *upper-window-col* 0))
       (let ((row (upper-window-row *upper-window-row*)))
+        (when (>= *upper-window-col* *status-line-width*)
+          (return-from upper-window-put))
         (loop while (< (fill-pointer row) *upper-window-col*)
               do (vector-push-extend #\Space row))
         (if (< *upper-window-col* (fill-pointer row))
@@ -377,7 +401,7 @@ has to be picked up explicitly before the translations are printed."
 
 (defun upper-window-clear ()
   "Forget the contents of the upper window"
-  (setf *upper-window-rows* nil
+  (setf (fill-pointer *upper-window-rows*) 0
         *upper-window-row* 0
         *upper-window-col* 0))
 
@@ -386,7 +410,7 @@ has to be picked up explicitly before the translations are printed."
 There is no screen model here, so the rows are printed where the cursor
 happens to be, in the status style, rather than pinned to the top."
   (let ((rows (remove-if (lambda (r) (zerop (length (string-right-trim " " r))))
-                         *upper-window-rows*)))
+                         (coerce *upper-window-rows* 'list))))
     (when rows
       (dolist (row rows)
         (let* ((text (string-right-trim " " row))
@@ -418,10 +442,14 @@ happens to be, in the status style, rather than pinned to the top."
     (setf *upper-window-row* 0 *upper-window-col* 0)))
 
 (defun set-window-cursor (line column)
-  "VAR:15 set_cursor, 1-based, only meaningful in the upper window"
+  "VAR:15 set_cursor, 1-based, only meaningful in the upper window.
+Version 6 gives the position in pixels, so the values are clamped to
+something a text screen can actually hold."
   (when (= *current-window* 1)
-    (setf *upper-window-row* (max 0 (1- line))
-          *upper-window-col* (max 0 (1- column)))))
+    (setf *upper-window-row*
+          (min (max 0 (1- line)) (1- *upper-window-max-rows*)))
+    (setf *upper-window-col*
+          (min (max 0 (1- column)) (1- *status-line-width*)))))
 
 (defun zm-print (text)
   "Print text to Z-machine output"
@@ -434,6 +462,7 @@ happens to be, in the status style, rather than pinned to the top."
       (progn (before-prompt) (ansi-style nil))
       (ansi-style *ansi-source*))
   (write-string text (zm-output-buffer *zm*))
+  (buffer-game-output (length text))
   (write-string text *standard-output*)
   ;; Buffer for translation
   (when *bilingual-mode*
@@ -453,6 +482,7 @@ happens to be, in the status style, rather than pinned to the top."
       (progn (before-prompt) (ansi-style nil))
       (ansi-style *ansi-source*))
   (write-char char (zm-output-buffer *zm*))
+  (buffer-game-output 1)
   (write-char char *standard-output*)
   ;; Buffer for translation (don't buffer the prompt)
   (when (and *bilingual-mode* (not (char= char #\>)))
