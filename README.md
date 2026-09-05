@@ -385,8 +385,11 @@ story writes again.
 
 | Variable | Default | Description |
 |:--|:--|:--|
-| `*keypress-hint*` | `"[press a key]"` | Shown when a single keypress is wanted. `NIL` shows nothing |
+| `*keypress-hint*` | `"[key then Enter]"` | Shown when a single keypress is wanted. `NIL` shows nothing |
 | `*input-hint*` | `"[type a command]"` | Shown when a line is wanted. `NIL` shows nothing |
+
+Input is read a line at a time, so a story asking for a single keypress still
+needs Enter after it. The hint says so rather than promising otherwise.
 
 ### Translation Management
 
@@ -583,7 +586,7 @@ zmachine-multilingual/
 
 ## Changelog
 
-Current version: **0.5.3**. See [CHANGELOG.md](CHANGELOG.md) for the release history.
+Current version: **0.5.4**. See [CHANGELOG.md](CHANGELOG.md) for the release history.
 
 ## Contributing
 

@@ -141,19 +141,17 @@
 
 ;;; 2OP:23 - div a b -> (result)
 (defop *opcodes-2op* 23 div (operands)
+  ;; The standard leaves division by zero undefined. Ending the story is the
+  ;; least useful reading of that, so answer zero and carry on.
   (let ((b (to-signed (second operands))))
-    (when (zerop b)
-      (error "Division by zero"))
     (store-result (fetch-store)
-                  (truncate (to-signed (first operands)) b))))
+                  (if (zerop b) 0 (truncate (to-signed (first operands)) b)))))
 
 ;;; 2OP:24 - mod a b -> (result)
 (defop *opcodes-2op* 24 mod (operands)
   (let ((b (to-signed (second operands))))
-    (when (zerop b)
-      (error "Division by zero"))
     (store-result (fetch-store)
-                  (rem (to-signed (first operands)) b))))
+                  (if (zerop b) 0 (rem (to-signed (first operands)) b)))))
 
 ;;; 2OP:25 - call_2s routine arg1 -> (result) [V4+]
 (defop *opcodes-2op* 25 call_2s (operands)

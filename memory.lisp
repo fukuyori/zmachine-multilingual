@@ -100,6 +100,14 @@
 ;;; Packed Address Handling
 ;;; ============================================================
 
+(defun header-font-width ()
+  "Font width in units. Bytes $26 and $27 swap meaning in Version 6."
+  (max 1 (zm-read-byte (if (= (zm-version *zm*) 6) #x27 #x26))))
+
+(defun header-font-height ()
+  "Font height in units. Bytes $26 and $27 swap meaning in Version 6."
+  (max 1 (zm-read-byte (if (= (zm-version *zm*) 6) #x26 #x27))))
+
 (defun header-routine-offset ()
   "Routine offset in words, V6-7 only"
   (logior (ash (zm-read-byte #x28) 8) (zm-read-byte #x29)))
@@ -329,12 +337,13 @@ often the more readable of the two here.")
         (set-byte #x21 *screen-columns*))
       (when (>= version 5)
         (if (= version 6)
-            ;; V6 measures in pixels
+            ;; V6 measures in pixels, and $26 and $27 swap meaning:
+            ;; $26 is the font height there and $27 the font width
             (progn
               (set-word #x22 *screen-pixel-width*)
               (set-word #x24 *screen-pixel-height*)
-              (set-byte #x26 (max 1 (floor *screen-pixel-width* *screen-columns*)))
-              (set-byte #x27 (max 1 (floor *screen-pixel-height* *screen-rows*))))
+              (set-byte #x26 (max 1 (floor *screen-pixel-height* *screen-rows*)))
+              (set-byte #x27 (max 1 (floor *screen-pixel-width* *screen-columns*))))
             ;; V5 measures in characters
             (progn
               (set-word #x22 *screen-columns*)

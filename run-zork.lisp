@@ -37,7 +37,7 @@
 ;; (setf *declare-pictures* nil)    ; keep the story in its text layout
 
 ;; Waiting for input (optional)
-;; (setf *keypress-hint* "[キーを押してください]")
+;; (setf *keypress-hint* "[キーを入力して Enter]")
 ;; (setf *input-hint* "[コマンドを入力してください]")
 
 ;; Select language (change as needed)

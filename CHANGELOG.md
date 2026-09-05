@@ -5,6 +5,51 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.4] - 2026-09-05
+
+Follow-up to the Version 6 work: Arthur runs, the status line lands in the
+right place, and the interpreter says what kind of input it is waiting for.
+
+### Fixed
+
+* **`get_wind_prop` answered zero to everything, and Arthur stopped with a
+  division by zero.** A story asks a window for its size and divides by it.
+  The window property table now reports real coordinates, sizes, cursor
+  position, font number and font size.
+* **Bytes $26 and $27 swap meaning in Version 6**: the font width and height
+  were written the wrong way round there, which threw the status line's column
+  arithmetic off.
+* **Dividing by zero ended the story.** The standard leaves the result
+  undefined, and stopping is the least useful reading of that, so `div` and
+  `mod` answer zero and carry on.
+* **The status line appeared between a block of story text and its
+  translation.** A story updates its status before printing the prompt, and
+  the bar was drawn the moment it did. It is now held until the prompt, so the
+  order is always story text, translation, status, prompt - the same as in
+  Versions 1 to 3.
+* **A whole screen drawn in the upper window was painted as a status bar.**
+  Arthur puts its hint menu there, and reverse video from edge to edge made it
+  unreadable. An upper window taller than `*status-bar-max-rows*` is printed
+  as ordinary text instead.
+* **A single keypress consumed only the key, leaving the newline behind**, so
+  the next keypress was answered by that leftover without the player touching
+  anything - every second menu selection went through on its own.
+* **Running out of input raised an error.** Reading past the end now ends the
+  session quietly, which is what it means.
+
+### Changed
+
+* The waiting-for-input hint reads `[key then Enter]`. Input arrives a line at
+  a time, so a story asking for one key still needs Enter after it, and a menu
+  wanting a particular key ignores a bare newline. `[press a key]` promised
+  something the interpreter does not do.
+
+### Known limitations
+
+* Arthur's hint menu can be opened but not navigated out of. Its `read_char`
+  calls carry a timeout and an interrupt routine, and timed input is still
+  ignored; whether that is the cause has not been established.
+
 ## [0.5.3] - 2026-09-05
 
 Version 6 illustrations are drawn in the terminal, and the status line works

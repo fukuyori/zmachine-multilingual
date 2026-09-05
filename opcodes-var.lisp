@@ -31,41 +31,40 @@
   (when (fboundp 'before-input)
     (funcall 'before-input))
   (show-input-hint *input-hint*)
-  (let* ((text-buffer (first operands))
-         (parse-buffer (second operands))
-         ;; Get input from user
-         (input (progn
-                  (force-output)
-                  (read-line))))
-    ;; Store input in text buffer
-    (let ((max-len (if (<= (zm-version *zm*) 4)
-                       (1- (zm-read-byte text-buffer))
-                       (zm-read-byte text-buffer))))
-      (setf input (subseq input 0 (min (length input) max-len)))
-      (setf input (string-downcase input))
-      
-      ;; Write to text buffer
-      (if (<= (zm-version *zm*) 4)
-          ;; V1-4: text starts at byte 1, terminated by 0
-          (progn
-            (loop for i from 0 below (length input)
-                  do (zm-write-byte (+ text-buffer 1 i) 
-                                    (char-code (char input i))))
-            (zm-write-byte (+ text-buffer 1 (length input)) 0))
-          ;; V5+: byte 1 is length, text starts at byte 2
-          (progn
-            (zm-write-byte (+ text-buffer 1) (length input))
-            (loop for i from 0 below (length input)
-                  do (zm-write-byte (+ text-buffer 2 i)
-                                    (char-code (char input i))))))
-      
-      ;; Tokenize if parse buffer given
-      (when (and parse-buffer (not (zerop parse-buffer)))
-        (tokenize-input input parse-buffer))
-      
-      ;; V5+: return terminating character
-      (when (>= (zm-version *zm*) 5)
-        (store-result (fetch-store) 13)))))  ; Return newline
+  (force-output)
+  (let ((line (read-line *standard-input* nil nil)))
+    (if (null line)
+        ;; Input ran out. That is the end of the session, not an error.
+        (setf (zm-running *zm*) nil)
+        (let* ((text-buffer (first operands))
+               (parse-buffer (second operands))
+               (max-len (if (<= (zm-version *zm*) 4)
+                            (1- (zm-read-byte text-buffer))
+                            (zm-read-byte text-buffer)))
+               (input (string-downcase
+                       (subseq line 0 (min (length line) max-len)))))
+          ;; Write to text buffer
+          (if (<= (zm-version *zm*) 4)
+              ;; V1-4: text starts at byte 1, terminated by 0
+              (progn
+                (loop for i from 0 below (length input)
+                      do (zm-write-byte (+ text-buffer 1 i)
+                                        (char-code (char input i))))
+                (zm-write-byte (+ text-buffer 1 (length input)) 0))
+              ;; V5+: byte 1 is length, text starts at byte 2
+              (progn
+                (zm-write-byte (+ text-buffer 1) (length input))
+                (loop for i from 0 below (length input)
+                      do (zm-write-byte (+ text-buffer 2 i)
+                                        (char-code (char input i))))))
+
+          ;; Tokenize if parse buffer given
+          (when (and parse-buffer (not (zerop parse-buffer)))
+            (tokenize-input input parse-buffer))
+
+          ;; V5+: return terminating character
+          (when (>= (zm-version *zm*) 5)
+            (store-result (fetch-store) 13))))))  ; Return newline
 
 ;;; VAR:5 - print_char zscii-char
 (defop *opcodes-var* 5 print_char (operands)
@@ -209,11 +208,19 @@
   ;; The key itself is not echoed, so the cursor stays on the hint
   ;; End of input is not an error: report a newline, as if the player had
   ;; pressed return
-  (let ((char (read-char *standard-input* nil #\Newline)))
+  (let ((char (read-char *standard-input* nil nil)))
+    ;; Input arrives a line at a time, so "m" comes in as "m" and a newline.
+    ;; Drop the rest of the line, or the next read_char would be answered by
+    ;; that leftover newline without the player touching anything.
+    (when (and char (char/= char #\Newline))
+      (loop for c = (read-char *standard-input* nil nil)
+            until (or (null c) (char= c #\Newline))))
     ;; On a terminal the Return that delivered this key has already been
     ;; echoed, so the cursor sits one line below the hint
     (erase-input-hint (input-tty-p))
-    (store-result (fetch-store) (char-to-zscii char))))
+    (if (null char)
+        (setf (zm-running *zm*) nil)
+        (store-result (fetch-store) (char-to-zscii char)))))
 
 ;;; VAR:23 - scan_table x table len form -> (result) [V4+]
 (defop *opcodes-var* 23 scan_table (operands)
@@ -442,8 +449,11 @@
 
 ;;; EXT:19 - get_wind_prop window property-number -> (result) [V6]
 (defop *opcodes-ext* 19 get_wind_prop (operands)
-  (declare (ignore operands))
-  (store-result (fetch-store) 0))
+  ;; A negative window number means the current one
+  (let ((window (to-signed (first operands))))
+    (store-result (fetch-store)
+                  (window-property (if (minusp window) *current-window* window)
+                                   (second operands)))))
 
 ;;; EXT:20 - scroll_window window pixels [V6]
 (defop *opcodes-ext* 20 scroll_window (operands)

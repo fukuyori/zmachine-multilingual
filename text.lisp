@@ -329,13 +329,20 @@ has to be picked up explicitly before the translations are printed."
     (buffer-line-for-translation)
     (setf *line-buffer* "")))
 
+(defvar *status-pending* nil
+  "A status window was updated and its bar has not been drawn yet")
+
+(defun draw-pending-status ()
+  "Draw whichever kind of status line this story has, once per turn"
+  (cond (*status-pending* (draw-status-bar))
+        ((not *status-line-shown*) (show-status-line)))
+  (setf *status-line-shown* nil))
+
 (defun before-prompt ()
   "Called just before the \">\" prompt reaches the screen"
   (flush-pending-line)
   (flush-translation-block)
-  (unless *status-line-shown*
-    (show-status-line))
-  (setf *status-line-shown* nil))
+  (draw-pending-status))
 
 (defun set-text-style (style)
   "VAR:17 set_text_style, mapped onto SGR parameters.
@@ -398,8 +405,11 @@ was printed as well, which is why a centred room name appeared twice.")
 without printing a prompt of its own leaves the player looking at a screen
 that gives no sign it is waiting.")
 
-(defvar *keypress-hint* "[press a key]"
+(defvar *keypress-hint* "[key then Enter]"
   "Shown when a story waits for a single keypress without prompting.
+Input is read a line at a time, so the key has to be followed by Enter. The
+story usually wants a particular key - a menu asking for M or Q, say - and
+Enter on its own delivers only a newline, which such a menu ignores.
 NIL shows nothing.")
 
 (defvar *input-hint* "[type a command]"
@@ -523,31 +533,75 @@ next to nothing in it.")
       *status-line-min-content*))
 
 (defun upper-window-flush ()
-  "Draw what the story wrote into the upper window as status lines.
-There is no screen model here, so the rows are printed where the cursor
-happens to be, in the status style, rather than pinned to the top."
+  "Note that the status window changed.
+Drawing it here would put the bar between a block of story text and its
+translation, because the story updates its status before printing the
+prompt. The bar is drawn at the prompt instead, so the order is always
+story text, translation, status, prompt - the same as in Versions 1 to 3."
+  (setf *status-pending* t))
+
+(defvar *status-bar-max-rows* 2
+  "How many rows the status window may have and still be drawn as a bar.
+A story also uses the upper window for whole screens - Arthur puts its hint
+menu there - and painting a menu in reverse video from edge to edge makes it
+unreadable. Anything taller is printed as ordinary text instead.")
+
+(defun draw-status-bar ()
+  "Print the captured status window."
   (let ((rows (remove-if (lambda (r) (zerop (length (string-right-trim " " r))))
                          (coerce *upper-window-rows* 'list))))
     (when (and rows (status-content-worth-drawing-p rows))
-      (dolist (row rows)
-        (let* ((text (string-right-trim " " row))
-               (gap (- *status-line-width* (display-width text)))
-               (line (concatenate 'string text
-                                  (make-string (max 0 gap)
-                                               :initial-element #\Space))))
-          (if (ansi-available-p)
-              (format *standard-output* "~&~C[0;~Am~A~C[0m~%"
-                      #\Escape *ansi-status* line #\Escape)
-              (format *standard-output* "~&~A~%" line))))
+      (if (<= (length rows) *status-bar-max-rows*)
+          ;; A status line: one bar the width of the screen
+          (dolist (row rows)
+            (let* ((text (string-right-trim " " row))
+                   (gap (- *status-line-width* (display-width text)))
+                   (line (concatenate 'string text
+                                      (make-string (max 0 gap)
+                                                   :initial-element #\Space))))
+              (if (ansi-available-p)
+                  (format *standard-output* "~&~C[0;~Am~A~C[0m~%"
+                          #\Escape *ansi-status* line #\Escape)
+                  (format *standard-output* "~&~A~%" line))))
+          ;; A whole screen of its own: print it plainly
+          (progn
+            (ansi-style nil)
+            (format *standard-output* "~&~%")
+            (dolist (row rows)
+              (format *standard-output* "~A~%" (string-right-trim " " row)))
+            (terpri *standard-output*)))
       (setf *ansi-current* nil)
       (setf *status-line-shown* t)
-      (force-output *standard-output*))))
+      (force-output *standard-output*)))
+  (setf *status-pending* nil))
 
 (defun split-upper-window (lines)
   "VAR:10 split_window"
   (setf *upper-window-height* lines)
   (when (zerop lines)
     (upper-window-clear)))
+
+(defun window-property (window property)
+  "One entry of a Version 6 window property table.
+Answering zero to everything, as this used to, is not harmless: a story that
+asks a window for its size and then divides by it stops with a division by
+zero. Arthur does exactly that."
+  (let* ((upper (eql window 1))
+         (font-w (header-font-width))
+         (font-h (header-font-height)))
+    (case property
+      (0 1)                             ; Y coordinate
+      (1 1)                             ; X coordinate
+      (2 (if upper                      ; Y size
+             (max font-h (* *upper-window-height* font-h))
+             *screen-pixel-height*))
+      (3 *screen-pixel-width*)          ; X size
+      (4 (1+ (* *upper-window-row* font-h)))   ; Y cursor
+      (5 (1+ (* *upper-window-col* font-w)))   ; X cursor
+      (12 1)                            ; font number
+      (13 (logior (ash font-h 8) font-w))      ; font size
+      (15 *screen-rows*)                ; line count
+      (otherwise 0))))
 
 (defun status-window-p (window)
   "Whether WINDOW is one of the ones captured into the status bar.
@@ -675,6 +729,7 @@ Handles stories that read without printing a \">\" prompt first, and returns
 the terminal to normal so that what the player types is not styled."
   (flush-pending-line)
   (flush-translation-block)
+  (draw-pending-status)
   (ansi-style nil)
   (force-output *standard-output*))
 

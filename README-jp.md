@@ -374,8 +374,11 @@ time game のストーリーでは、代わりに `Time: hh:mm` を表示しま�
 
 | 変数 | 既定値 | 説明 |
 |:--|:--|:--|
-| `*keypress-hint*` | `"[press a key]"` | キー入力待ちのときの表示。`NIL` で非表示 |
+| `*keypress-hint*` | `"[key then Enter]"` | キー入力待ちのときの表示。`NIL` で非表示 |
 | `*input-hint*` | `"[type a command]"` | コマンド入力待ちのときの表示。`NIL` で非表示 |
+
+入力は行単位で読むため、作品が 1 文字の入力を求めている場合でも Enter が必要です。
+表示はその実態に合わせてあります。
 
 ### 翻訳管理
 
@@ -572,7 +575,7 @@ zmachine-multilingual/
 
 ## 変更履歴
 
-現在のバージョンは **0.5.3** です。リリース履歴は [CHANGELOG-jp.md](CHANGELOG-jp.md) を参照してください。
+現在のバージョンは **0.5.4** です。リリース履歴は [CHANGELOG-jp.md](CHANGELOG-jp.md) を参照してください。
 
 ## コントリビューション
 

@@ -5,7 +5,7 @@
   :name "Z-machine Interpreter"
   :description "A Z-machine interpreter for running Infocom text adventures"
   :author "Claude"
-  :version "0.5.3"
+  :version "0.5.4"
   :license "MIT"
   :serial t
   :components ((:file "packages")

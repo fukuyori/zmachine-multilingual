@@ -101,6 +101,7 @@
    #:*status-line-enabled*
    #:*status-line-width*
    #:*status-line-min-content*
+   #:*status-bar-max-rows*
    #:*input-hint*
    #:*keypress-hint*
 
