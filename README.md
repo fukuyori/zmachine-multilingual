@@ -19,7 +19,7 @@ A Z-machine interpreter written in Common Lisp. Play classic text adventures lik
 
 ## Features
 
-* Z-machine version 1-8 support, verified against 34 story files
+* Z-machine version 1-8 support, verified against 34 story files and the CZECH conformance suite
 * Bilingual display (English + translation)
 * Status line with location, score and turn count (V1-3)
 * Original, translation and status line styled apart in the terminal
@@ -58,14 +58,24 @@ The [IF Archive](https://ifarchive.org/) hosts many Z-machine compatible games.
 * `.z6` - Z-machine version 6 (graphical games; text only here)
 * `.z8` - Z-machine version 8 (extended format)
 
+Tested against the story files and conformance test suites collected in
+[jeffnyman/zifmia](https://github.com/jeffnyman/zifmia/tree/master), which
+gathers Z-machine stories of every version together with the CZECH and
+TerpEtude test suites and their reference output.
+
 Tested against 34 story files:
+
+The CZECH conformance suite passes completely: 406 passed, 0 failed, matching
+its reference output.
 
 | Version | Stories | Status |
 |:--|--:|:--|
+| 1 (`.z1`) | 1 | Plays |
+| 2 (`.z2`) | 1 | Plays |
 | 3 (`.z3`) | 17 | All play |
 | 4 (`.z4`) | 3 | All play; timed input is ignored |
 | 5 (`.z5`) | 8 | All play |
-| 6 (`.z6`) | 2 | Play as text; no graphics, and the upper window is drawn as a status bar rather than laid out in pixels |
+| 6 (`.z6`) | 2 | Play as text, Zork Zero included; no graphics, and the upper window is drawn as a status bar rather than laid out in pixels |
 | 8 (`.z8`) | 1 | Plays |
 
 Place story files in the same directory as the interpreter, or specify the full path when loading.
@@ -506,9 +516,13 @@ zmachine-multilingual/
 * [Frotz - Z-Machine Interpreter](https://davidgriffith.gitlab.io/frotz/)
 * [Inform 7](http://inform7.com/)
 
+### Test Data
+
+* [jeffnyman/zifmia](https://github.com/jeffnyman/zifmia/tree/master) - the story files and conformance test suites used to verify this interpreter, including CZECH and TerpEtude with their reference output
+
 ## Changelog
 
-Current version: **0.5.1**. See [CHANGELOG.md](CHANGELOG.md) for the release history.
+Current version: **0.5.2**. See [CHANGELOG.md](CHANGELOG.md) for the release history.
 
 ## Contributing
 

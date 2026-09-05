@@ -35,7 +35,9 @@
         (loop for i from 0 below local-count
               do (setf (aref (call-frame-locals frame) i) 0)))
     
-    ;; Copy arguments to locals
+    ;; Copy arguments to locals, and remember how many there were so that
+    ;; check_arg_count can answer truthfully
+    (setf (call-frame-arg-count frame) (length args))
     (loop for i from 0 below (min (length args) local-count)
           do (setf (aref (call-frame-locals frame) i) (nth i args)))
     

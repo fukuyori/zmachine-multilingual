@@ -74,36 +74,47 @@
        (write-char #\Space output)
        (setf (ztext-state-shift state) nil))
       
-      ;; Z-characters 1-3: abbreviations (V2+) or newline (V1)
-      ((and (<= 1 zchar 3) (>= version 2))
-       (setf (ztext-state-abbrev-code state) zchar)
-       (setf (ztext-state-shift state) nil))
-      
+      ;; Z-character 1
+      ;;   V1  : newline
+      ;;   V2+ : abbreviation
       ((and (= zchar 1) (= version 1))
        (write-char #\Newline output)
        (setf (ztext-state-shift state) nil))
-      
+
+      ((= zchar 1)
+       (setf (ztext-state-abbrev-code state) zchar)
+       (setf (ztext-state-shift state) nil))
+
+      ;; Z-characters 2 and 3
+      ;;   V1-2 : temporary shift, 2 one alphabet up and 3 one down
+      ;;   V3+  : abbreviation
+      ;; Without the V1-2 case these fell through to the alphabet table and
+      ;; indexed it with zchar - 6, which is negative.
+      ((and (<= 2 zchar 3) (<= version 2))
+       (setf (ztext-state-shift state)
+             (mod (+ (ztext-state-alphabet state)
+                     (if (= zchar 2) 1 2))
+                  3)))
+
+      ((<= 2 zchar 3)
+       (setf (ztext-state-abbrev-code state) zchar)
+       (setf (ztext-state-shift state) nil))
+
       ;; Z-characters 4-5: shift characters
+      ;;   V1-2 : shift lock, 4 one alphabet up and 5 one down
+      ;;   V3+  : temporary shift, 4 to A1 and 5 to A2
       ((= zchar 4)
-       (if (and (<= version 2) (null (ztext-state-shift state)))
-           ;; V1-2: shift lock
-           (setf (ztext-state-alphabet state) 
+       (if (<= version 2)
+           (setf (ztext-state-alphabet state)
                  (mod (1+ (ztext-state-alphabet state)) 3))
-           ;; V3+: temporary shift
-           (setf (ztext-state-shift state) 
-                 (mod (1+ (or (ztext-state-shift state)
-                             (ztext-state-alphabet state))) 3))))
-      
+           (setf (ztext-state-shift state) 1)))
+
       ((= zchar 5)
-       (if (and (<= version 2) (null (ztext-state-shift state)))
-           ;; V1-2: shift lock
-           (setf (ztext-state-alphabet state) 
+       (if (<= version 2)
+           (setf (ztext-state-alphabet state)
                  (mod (+ 2 (ztext-state-alphabet state)) 3))
-           ;; V3+: temporary shift
-           (setf (ztext-state-shift state) 
-                 (mod (+ 2 (or (ztext-state-shift state)
-                             (ztext-state-alphabet state))) 3))))
-      
+           (setf (ztext-state-shift state) 2)))
+
       ;; Z-characters 6-31: alphabet characters
       (t
        (let ((current-alphabet (or (ztext-state-shift state)
@@ -121,7 +132,7 @@
            (t
             (let ((alphabet-str (aref *alphabet* current-alphabet))
                   (char-index (- zchar 6)))
-              (when (< char-index (length alphabet-str))
+              (when (< -1 char-index (length alphabet-str))
                 (write-char (char alphabet-str char-index) output)))))
          
          ;; Clear temporary shift

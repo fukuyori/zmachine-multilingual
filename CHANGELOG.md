@@ -5,6 +5,52 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.2] - 2026-09-05
+
+The CZECH conformance suite now passes completely: 406 passed, 0 failed, which
+is exactly its reference output. Versions 1 and 2 run for the first time.
+
+### Fixed
+
+* **Indirect references to the stack were wrong in seven opcodes.** When
+  `store`, `inc`, `dec`, `inc_chk`, `dec_chk` or `pull` name variable 0 through
+  an *operand*, the standard requires the top of the stack to be overwritten in
+  place; this pushed a new item instead, so every value below shifted by one.
+  This affected every version, not just the newer ones. 23 of the 31 CZECH
+  failures came from this.
+* **`check_arg_count` answered with the wrong number.** It reported how many
+  locals the routine declares rather than how many arguments the caller
+  supplied, so a routine with seven locals called with none claimed to have
+  received seven. The call frame now records the real count.
+* **A seeded random sequence did not repeat.** `random` with a negative operand
+  has to seed the generator so that the same seed produces the same sequence;
+  it reseeded from the clock instead. A deterministic generator is now used
+  whenever a seed has been given.
+* **Version 1 and 2 stories crashed on the first shifted character.** In those
+  versions Z-characters 2 and 3 are shift characters, but only 4 and 5 were
+  handled, so 2 and 3 fell through to the alphabet table and indexed it at
+  position -4. `zork1.z1` (Release 2, 1980) and `zork1.z2` now run.
+* **Version 6 `pull` emptied the wrong stack.** In Version 6 its operand is the
+  address of a *user stack*, not a variable number. Popping the game stack
+  instead drained it, and `zork0.z6` stopped a few moves into the opening
+  scene. Zork Zero now plays.
+
+### Added
+
+* **Version 6 user stacks.** `push_stack` and `pop_stack` were stubs that always
+  failed; both now work, as does the user-stack form of `pull`. The standard
+  fixes only the first word of the table - the number of spare slots - so the
+  rest of the layout follows from that, and is confirmed by Zork Zero running.
+
+### Verified
+
+| Version | Result |
+|:--|:--|
+| 1 | `zork1.z1` plays |
+| 2 | `zork1.z2` plays |
+| 3-8 | All 34 stories in the test set play |
+| CZECH | 406 passed, 0 failed - matches the reference output |
+
 ## [0.5.1] - 2026-09-05
 
 Versions 6 and 8 now run. All 34 story files in the test set play.

@@ -56,6 +56,7 @@
   (locals (make-array 15 :element-type 'fixnum :initial-element 0)
           :type (simple-array fixnum (15)))
   (stack-pointer 0 :type fixnum)    ; Stack pointer at call time
+  (arg-count 0 :type fixnum)        ; How many arguments the caller supplied
   (discard-result nil :type boolean)) ; Whether to discard result
 
 ;;; Global Z-machine instance
@@ -169,6 +170,40 @@
       ;; Global variable
       (t
        (zm-write-word (+ (zm-globals-addr *zm*) (* 2 (- var-num 16))) value)))))
+
+(defun user-stack-pop (table)
+  "Pop a value from a Version 6 user stack.
+The standard only fixes the first word of the table: it holds the number of
+spare slots, so the initial value is the capacity. The rest follows from
+that - values fill the table from its end downwards, and the spare count
+rises again as they are popped. No underflow check is made, as the standard
+explicitly says the Z-machine makes none."
+  (let ((spare (1+ (zm-read-word table))))
+    (zm-write-word table spare)
+    (zm-read-word (+ table (* 2 spare)))))
+
+(defun user-stack-push (table value)
+  "Push a value onto a Version 6 user stack. NIL when the stack is full."
+  (let ((spare (zm-read-word table)))
+    (when (plusp spare)
+      (zm-write-word (+ table (* 2 spare)) value)
+      (zm-write-word table (1- spare))
+      t)))
+
+(defun poke-variable (var-num value)
+  "Write a variable named by an operand rather than by the instruction itself.
+Variable 0 then means the top of the stack *in place*: store, inc, dec,
+inc_chk, dec_chk and pull must overwrite the top item, not push a new one
+(Z-Machine Standard 1.1, section 6.3.4)."
+  (declare (type (integer 0 255) var-num))
+  (if (zerop var-num)
+      (let ((sp (fill-pointer (zm-stack *zm*)))
+            (value (logand value #xFFFF)))
+        (if (plusp sp)
+            (setf (aref (zm-stack *zm*) (1- sp)) value)
+            ;; Nothing to overwrite; a push is the only sensible answer
+            (vector-push-extend value (zm-stack *zm*))))
+      (write-variable var-num value)))
 
 (defun peek-variable (var-num)
   "Read a variable without popping stack"

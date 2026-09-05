@@ -43,7 +43,7 @@
          (value (to-signed (second operands)))
          (current (to-signed (peek-variable var)))
          (new-val (1- current)))
-    (write-variable var (to-unsigned new-val))
+    (poke-variable var (to-unsigned new-val))
     (do-branch (< new-val value))))
 
 ;;; 2OP:5 - inc_chk (variable) value ?(label)
@@ -52,7 +52,7 @@
          (value (to-signed (second operands)))
          (current (to-signed (peek-variable var)))
          (new-val (1+ current)))
-    (write-variable var (to-unsigned new-val))
+    (poke-variable var (to-unsigned new-val))
     (do-branch (> new-val value))))
 
 ;;; 2OP:6 - jin obj1 obj2 ?(label)
@@ -88,7 +88,9 @@
 
 ;;; 2OP:13 - store (variable) value
 (defop *opcodes-2op* 13 store (operands)
-  (write-variable (first operands) (second operands)))
+  ;; The variable is named by an operand, so variable 0 is the top of the
+  ;; stack in place
+  (poke-variable (first operands) (second operands)))
 
 ;;; 2OP:14 - insert_obj obj dest
 (defop *opcodes-2op* 14 insert_obj (operands)
@@ -211,13 +213,13 @@
 (defop *opcodes-1op* 5 inc (operands)
   (let* ((var (first operands))
          (value (to-signed (peek-variable var))))
-    (write-variable var (to-unsigned (1+ value)))))
+    (poke-variable var (to-unsigned (1+ value)))))
 
 ;;; 1OP:6 - dec (variable)
 (defop *opcodes-1op* 6 dec (operands)
   (let* ((var (first operands))
          (value (to-signed (peek-variable var))))
-    (write-variable var (to-unsigned (1- value)))))
+    (poke-variable var (to-unsigned (1- value)))))
 
 ;;; 1OP:7 - print_addr byte-addr
 (defop *opcodes-1op* 7 print_addr (operands)

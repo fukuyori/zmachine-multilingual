@@ -77,17 +77,42 @@
   (zm-print-num (first operands)))
 
 ;;; VAR:7 - random range -> (result)
+;;;
+;;; A negative range seeds the generator with that value, and the sequence
+;;; that follows has to repeat for a given seed. Reseeding the host generator
+;;; from the clock, as this used to, produced a different sequence every time.
+
+(defvar *rng-seeded-state* nil
+  "State of the reproducible generator, NIL while the host generator is used")
+
+(defun seed-random (value)
+  "Switch to the reproducible generator with VALUE as its seed"
+  (setf *rng-seeded-state* (max 1 (logand value #xFFFFFFFF))))
+
+(defun unseed-random ()
+  "Go back to the host generator, seeded unpredictably"
+  (setf *rng-seeded-state* nil)
+  (setf *random-state* (make-random-state t)))
+
+(defun next-random (range)
+  "Uniformly distributed value in 1..RANGE"
+  (if *rng-seeded-state*
+      ;; xorshift32: the same seed always yields the same sequence
+      (let ((x *rng-seeded-state*))
+        (setf x (logand (logxor x (ash x 13)) #xFFFFFFFF))
+        (setf x (logxor x (ash x -17)))
+        (setf x (logand (logxor x (ash x 5)) #xFFFFFFFF))
+        (setf *rng-seeded-state* (max 1 x))
+        (1+ (mod x range)))
+      (1+ (random range))))
+
 (defop *opcodes-var* 7 random (operands)
   (let ((range (to-signed (first operands))))
     (store-result (fetch-store)
                   (cond
-                    ((plusp range)
-                     (1+ (random range)))
-                    ((minusp range)
-                     ;; Seed random number generator
-                     (setf *random-state* (make-random-state t))
-                     0)
-                    (t 0)))))
+                    ((plusp range) (next-random range))
+                    ((minusp range) (seed-random (- range)) 0)
+                    (t (unseed-random) 0)))))
 
 ;;; VAR:8 - push value
 (defop *opcodes-var* 8 push (operands)
@@ -99,8 +124,14 @@
   ;; store byte that was not there and popped the stack one time too many,
   ;; which lost instruction alignment and ended in a stack underflow.
   (if (= (zm-version *zm*) 6)
-      (store-result (fetch-store) (read-variable 0))
-      (write-variable (first operands) (read-variable 0))))
+      ;; In V6 the operand is the address of a user stack, not a variable
+      ;; number. Without one the game stack is used.
+      (let ((stack (first operands)))
+        (store-result (fetch-store)
+                      (if (and stack (plusp stack))
+                          (user-stack-pop stack)
+                          (read-variable 0))))
+      (poke-variable (first operands) (read-variable 0))))
 
 ;;; VAR:10 - split_window lines
 (defop *opcodes-var* 10 split_window (operands)
@@ -259,13 +290,11 @@
 
 ;;; VAR:31 - check_arg_count arg-num ?(label) [V5+]
 (defop *opcodes-var* 31 check_arg_count (operands)
+  ;; The count comes from the call, not from how many locals the routine
+  ;; declares: a routine with seven locals called with none has no arguments
   (let* ((arg-num (first operands))
          (frame (car (zm-call-stack *zm*)))
-         (supplied (if frame
-                      ;; Count non-zero locals as arguments
-                      ;; This is simplified; real implementation tracks actual args
-                      (call-frame-local-count frame)
-                      0)))
+         (supplied (if frame (call-frame-arg-count frame) 0)))
     (do-branch (<= arg-num supplied))))
 
 ;;; ============================================================
@@ -387,7 +416,12 @@
 
 ;;; EXT:21 - pop_stack items stack [V6]
 (defop *opcodes-ext* 21 pop_stack (operands)
-  (declare (ignore operands)))
+  (let ((items (first operands))
+        (stack (second operands)))
+    (if (and stack (plusp stack))
+        ;; Discarding from a user stack just gives the slots back
+        (zm-write-word stack (+ (zm-read-word stack) items))
+        (dotimes (i items) (read-variable 0)))))
 
 ;;; EXT:22 - read_mouse array [V6]
 (defop *opcodes-ext* 22 read_mouse (operands)
@@ -405,9 +439,8 @@
 
 ;;; EXT:24 - push_stack value stack ?(label) [V6]
 (defop *opcodes-ext* 24 push_stack (operands)
-  (declare (ignore operands))
-  ;; User stacks are not provided, so the push never succeeds
-  (do-branch nil))
+  ;; Branches when the push succeeded; a full stack fails
+  (do-branch (and (user-stack-push (second operands) (first operands)) t)))
 
 ;;; EXT:25 - put_wind_prop window property-number value [V6]
 (defop *opcodes-ext* 25 put_wind_prop (operands)
