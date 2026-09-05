@@ -5,6 +5,50 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-09-05
+
+Version 5 stories now run. Verified against 34 story files: every Version 3
+story and every Version 5 story in the test set plays.
+
+### Fixed
+
+* **Extended opcodes were dispatched to the wrong table, so no Version 5 story
+  could run.** The `0xBE` prefix was decoded correctly but the instruction was
+  then looked up among the VAR opcodes, so `EXT:9` (`save_undo`) executed as
+  `VAR:9` (`pull`) and emptied the stack. `Advent.z5` died with "Stack
+  underflow" on the first command. The extended table was never reached at all.
+
+### Added
+
+* **The extended opcodes for Version 5**: `save_table`, `restore_table`,
+  `log_shift`, `art_shift`, `set_font`, `save_undo`, `restore_undo`,
+  `print_unicode` and `check_unicode`. The Version 6 picture opcodes are
+  deliberately left out.
+* **The upper window** - `split_window`, `set_window`, `set_cursor`,
+  `get_cursor` and `erase_window` were empty stubs, so a story's status line
+  landed in the middle of the transcript. What the story writes to the upper
+  window is now captured and drawn as a status bar when it switches back to the
+  main window.
+* **Interpreter capabilities are declared in the header.** The loader used to
+  read the story without telling it anything about the interpreter, so stories
+  could not lay out their status line or know which text styles were safe. Flags
+  1 and 2, the screen size, the interpreter number and the standard revision are
+  now written before execution starts, and again on restart.
+  * `*screen-columns*` (80) and `*screen-rows*` (24) set the size reported
+  * `*interpreter-number*` (6, IBM PC) sets the interpreter identity
+* `set_text_style` now maps onto ANSI: reverse video, bold and italic.
+* **An unimplemented opcode no longer ends the story.** It is reported once and
+  skipped. Set `*strict-opcodes*` to `T` for the old behaviour, which is useful
+  when tracking down a decoding problem.
+
+### Known limitations
+
+* Version 6 needs graphics and multiple windows; `advent.z6` and `zork0.z6` do
+  not run.
+* Version 8 does not run yet - `advent.z8` loses instruction alignment inside a
+  routine. The cause has not been identified.
+* Version 4 timed input (the extra operands of `read`) is ignored.
+
 ## [0.4.1] - 2026-09-05
 
 ### Added

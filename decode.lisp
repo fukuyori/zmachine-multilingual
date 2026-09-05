@@ -64,7 +64,9 @@
       ((= opcode-byte #xBE)
        (setf form :extended)
        (setf opcode (fetch-byte))
-       (setf op-count :var)
+       ;; Extended opcodes have their own table. Dispatching them as :var
+       ;; ran EXT:9 (save_undo) as VAR:9 (pull) and emptied the stack.
+       (setf op-count :ext)
        (let ((types-byte (fetch-byte)))
          (setf operand-types (decode-operand-types types-byte 4))))
       

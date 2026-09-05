@@ -19,7 +19,7 @@ A Z-machine interpreter written in Common Lisp. Play classic text adventures lik
 
 ## Features
 
-* Z-machine version 1-5 support
+* Z-machine version 1-5 support (Version 3 and 5 verified against 34 story files)
 * Bilingual display (English + translation)
 * Status line with location, score and turn count (V1-3)
 * Original, translation and status line styled apart in the terminal
@@ -56,7 +56,15 @@ The [IF Archive](https://ifarchive.org/) hosts many Z-machine compatible games.
 * `.z5` - Z-machine version 5 (later Infocom games)
 * `.z8` - Z-machine version 8 (extended format)
 
-Currently, testing has been done with `.z3` files.
+Tested against 34 story files:
+
+| Version | Status |
+|:--|:--|
+| 3 (`.z3`) | Every story in the test set plays |
+| 4 (`.z4`) | Plays; timed input is ignored |
+| 5 (`.z5`) | Every story in the test set plays |
+| 6 (`.z6`) | Not supported - needs graphics and multiple windows |
+| 8 (`.z8`) | Not working yet |
 
 Place story files in the same directory as the interpreter, or specify the full path when loading.
 
@@ -268,6 +276,27 @@ This interpreter has no screen model, so the line scrolls with the text instead 
 being pinned to the top of the screen. CJK characters are counted as two columns
 when the line is padded.
 
+### Interpreter Settings
+
+Stories from Version 4 onwards read the header to find out what the interpreter
+can do and how large the screen is, and lay out their status line accordingly.
+
+| Variable | Default | Description |
+|:--|:--|:--|
+| `*screen-columns*` | `80` | Screen width reported to the story |
+| `*screen-rows*` | `24` | Screen height reported to the story |
+| `*interpreter-number*` | `6` | Interpreter identity (6 = IBM PC); some stories pick their character set from this |
+| `*strict-opcodes*` | `NIL` | `T` stops the story on an unimplemented opcode instead of skipping it |
+
+An unimplemented opcode is reported once and skipped. Skipping is a guess - the
+operands were consumed but a store or branch byte may not have been - so set
+`*strict-opcodes*` to `T` when tracking down where a story goes wrong.
+
+Version 4 and 5 stories draw their status line into the upper window. There is
+no screen model here, so what the story writes there is captured and printed as
+a status bar when it switches back to the main window, instead of being pinned
+to the top of the screen.
+
 ### How a Line Is Translated
 
 Each line the story prints is looked up in this order:
@@ -417,15 +446,15 @@ zmachine-multilingual/
 
 * **packages.lisp**: Defines Common Lisp packages. Declares functions exported externally (`load-story`, `run`, `set-language`, etc.).
 
-* **memory.lisp**: The heart of the Z-machine. Loads story files as byte arrays and provides memory access functions. Also manages global variables, local variables, and stack. Save/restore functionality is implemented here.
+* **memory.lisp**: The heart of the Z-machine. Loads story files as byte arrays, declares the interpreter capabilities in the header, and provides memory access functions. Also manages global variables, local variables, and stack. Save/restore functionality is implemented here.
 
-* **text.lisp**: Handles ZSCII encoding and the status line. Implements 5-bit character decoding, alphabet shifting, and abbreviation expansion. Also serves as the connection point with the translation system.
+* **text.lisp**: Handles ZSCII encoding, the status line and the upper window. Implements 5-bit character decoding, alphabet shifting, and abbreviation expansion. Also serves as the connection point with the translation system.
 
 * **objects.lisp**: Implements the Z-machine object system. Objects have a tree structure, representing containment through parent-child relationships. Provides access to attributes (32 flags) and properties (variable-length data).
 
 * **dictionary.lisp**: Handles player input parsing. Splits input strings into tokens and looks up each token in the dictionary. Found addresses are stored in the parse buffer and passed to game logic.
 
-* **decode.lisp**: Bytecode decoder. Determines instruction format (0OP/1OP/2OP/VAR), reads operands, and generates instruction structures.
+* **decode.lisp**: Bytecode decoder. Determines instruction format (0OP/1OP/2OP/VAR/EXT), reads operands, and generates instruction structures.
 
 * **opcodes.lisp** and **opcodes-var.lisp**: Implementation of approximately 100 opcodes. All Z-machine functionality is contained here, including arithmetic operations, comparisons, branching, object manipulation, and I/O.
 
@@ -472,7 +501,7 @@ zmachine-multilingual/
 
 ## Changelog
 
-Current version: **0.4.1**. See [CHANGELOG.md](CHANGELOG.md) for the release history.
+Current version: **0.5.0**. See [CHANGELOG.md](CHANGELOG.md) for the release history.
 
 ## Contributing
 

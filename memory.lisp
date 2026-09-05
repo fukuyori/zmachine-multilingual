@@ -192,6 +192,73 @@
 ;;; Story File Loading
 ;;; ============================================================
 
+;;; ============================================================
+;;; Interpreter Capabilities
+;;;
+;;; A story reads these on startup to decide what it may use and how wide
+;;; it may lay out its status line, so they have to be written into the
+;;; header before execution begins.
+;;; ============================================================
+
+(defvar *screen-columns* 80 "Screen width reported to the story")
+(defvar *screen-rows* 24 "Screen height reported to the story")
+
+(defvar *interpreter-number* 6
+  "Interpreter number reported to the story (6 = IBM PC)")
+
+(defvar *interpreter-version* (char-code #\F)
+  "Interpreter version reported to the story")
+
+(defun configure-header (zm)
+  "Declare what this interpreter can do, and how large the screen is"
+  (let ((memory (zm-memory zm))
+        (version (zm-version zm)))
+    (flet ((set-byte (addr value) (setf (aref memory addr) (logand value #xFF)))
+           (set-word (addr value)
+             (setf (aref memory addr) (ldb (byte 8 8) value))
+             (setf (aref memory (1+ addr)) (ldb (byte 8 0) value))))
+      (if (<= version 3)
+          ;; Flags 1, V1-3: bit 4 = no status line, bit 5 = splitting available,
+          ;; bit 6 = variable-pitch font is the default
+          (let ((flags (aref memory 1)))
+            (setf flags (logandc2 flags (ash 1 4)))   ; a status line is shown
+            (setf flags (logior flags (ash 1 5)))     ; splitting is available
+            (setf flags (logandc2 flags (ash 1 6)))   ; fixed-pitch by default
+            (set-byte 1 flags))
+          ;; Flags 1, V4+
+          (let ((flags (aref memory 1)))
+            (setf flags (logior flags (ash 1 2)))     ; boldface
+            (setf flags (logior flags (ash 1 3)))     ; italic
+            (setf flags (logior flags (ash 1 4)))     ; fixed-space font
+            (setf flags (logandc2 flags (ash 1 5)))   ; no sound effects
+            (setf flags (logandc2 flags (ash 1 7)))   ; no timed input
+            (setf flags (logandc2 flags (ash 1 1)))   ; no pictures
+            (if (>= version 5)
+                (setf flags (logior flags (ash 1 0))) ; colours
+                (setf flags (logandc2 flags (ash 1 0))))
+            (set-byte 1 flags)))
+      ;; Flags 2: turn off everything the story may request but we cannot do
+      (let ((flags2 (logior (ash (aref memory #x10) 8) (aref memory #x11))))
+        (dolist (bit '(3      ; pictures
+                       4      ; undo
+                       5      ; mouse
+                       7      ; sound effects
+                       8))    ; menus
+          (setf flags2 (logandc2 flags2 (ash 1 bit))))
+        (set-word #x10 flags2))
+      (when (>= version 4)
+        (set-byte #x1E *interpreter-number*)
+        (set-byte #x1F *interpreter-version*)
+        (set-byte #x20 *screen-rows*)
+        (set-byte #x21 *screen-columns*))
+      (when (>= version 5)
+        (set-word #x22 *screen-columns*)   ; width in units
+        (set-word #x24 *screen-rows*)      ; height in units
+        (set-byte #x26 1)                  ; font width in units
+        (set-byte #x27 1)                  ; font height in units
+        (set-word #x32 #x0100))            ; standard revision 1.0
+      zm)))
+
 (defun load-story (filename)
   "Load a Z-machine story file"
   (with-open-file (stream filename 
@@ -237,6 +304,9 @@
         (setf (zm-original-dynamic zm)
               (copy-seq (subseq memory 0 (zm-dynamic-end zm))))
         
+        ;; Tell the story what this interpreter can do
+        (configure-header zm)
+
         ;; Set as current instance
         (setf *zm* zm)
         
@@ -253,6 +323,9 @@
   (when *zm*
     ;; Restore dynamic memory
     (replace (zm-memory *zm*) (zm-original-dynamic *zm*))
+
+    ;; The header lives in dynamic memory, so re-declare our capabilities
+    (configure-header *zm*)
     
     ;; Reset PC
     (setf (zm-pc *zm*) (header-initial-pc))

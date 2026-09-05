@@ -67,6 +67,12 @@
    #:*use-partial-matches*
    #:*partial-match-threshold*
 
+   ;; Interpreter capabilities
+   #:*screen-columns*
+   #:*screen-rows*
+   #:*interpreter-number*
+   #:*strict-opcodes*
+
    ;; Terminal appearance
    #:*ansi-enabled*
    #:*ansi-source*

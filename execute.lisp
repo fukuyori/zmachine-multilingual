@@ -70,22 +70,43 @@
 ;;; Main Execution Loop
 ;;; ============================================================
 
+(defvar *strict-opcodes* nil
+  "Stop the story when an opcode is not implemented, instead of skipping it")
+
+(defvar *unimplemented-opcodes* (make-hash-table :test 'equal)
+  "Opcodes already reported, so each one is only mentioned once")
+
+(defun report-unimplemented-opcode (op-count opcode pc)
+  "Warn once about an opcode this interpreter does not implement"
+  (let ((key (cons op-count opcode)))
+    (unless (gethash key *unimplemented-opcodes*)
+      (setf (gethash key *unimplemented-opcodes*) t)
+      (format *error-output*
+              "~&[unimplemented opcode ~(~A~):~D at PC ~X - skipped]~%"
+              op-count opcode pc))))
+
 (defun execute-instruction ()
   "Execute a single instruction"
-  (multiple-value-bind (form op-count opcode operands)
-      (decode-instruction)
-    (let* ((table (ecase op-count
-                    (:0op *opcodes-0op*)
-                    (:1op *opcodes-1op*)
-                    (:2op *opcodes-2op*)
-                    (:var *opcodes-var*)
-                    (:ext *opcodes-ext*)))
-           (handler (gethash opcode table)))
-      (unless handler
-        (error "Unknown opcode: ~A:~D at PC ~X" op-count opcode (zm-pc *zm*)))
-      
-      ;; Execute the opcode handler
-      (funcall (second handler) operands))))
+  (let ((pc (zm-pc *zm*)))
+    (multiple-value-bind (form op-count opcode operands)
+        (decode-instruction)
+      (declare (ignore form))
+      (let* ((table (ecase op-count
+                      (:0op *opcodes-0op*)
+                      (:1op *opcodes-1op*)
+                      (:2op *opcodes-2op*)
+                      (:var *opcodes-var*)
+                      (:ext *opcodes-ext*)))
+             (handler (gethash opcode table)))
+        (cond
+          (handler (funcall (second handler) operands))
+          (*strict-opcodes*
+           (error "Unknown opcode: ~A:~D at PC ~X" op-count opcode pc))
+          (t
+           ;; Skipping is a guess - the operands were consumed, but a store
+           ;; or branch byte belonging to the instruction was not, so the PC
+           ;; may now be off. Still better than ending the story outright.
+           (report-unimplemented-opcode op-count opcode pc)))))))
 
 (defun run (&optional (max-instructions nil))
   "Run the Z-machine"

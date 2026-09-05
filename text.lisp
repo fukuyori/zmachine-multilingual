@@ -326,8 +326,109 @@ has to be picked up explicitly before the translations are printed."
     (show-status-line))
   (setf *status-line-shown* nil))
 
+(defun set-text-style (style)
+  "VAR:17 set_text_style, mapped onto SGR parameters.
+0 roman, 1 reverse video, 2 bold, 4 italic, 8 fixed pitch."
+  (ansi-style (case style
+                (0 nil)
+                (1 "7")
+                (2 "1")
+                (4 "3")
+                (8 nil)
+                (otherwise nil))))
+
+(defvar *current-window* 0
+  "Window the story is writing to: 0 = main text, 1 = upper window")
+
+(defvar *upper-window-height* 0
+  "Number of lines the story reserved for the upper window")
+
+(defvar *upper-window-rows* nil
+  "Rows of the upper window, as adjustable strings")
+
+(defvar *upper-window-row* 0 "Cursor row in the upper window")
+(defvar *upper-window-col* 0 "Cursor column in the upper window")
+
+(defun upper-window-row (n)
+  "Row N of the upper window, created on demand"
+  (loop while (<= (length *upper-window-rows*) n)
+        do (setf *upper-window-rows*
+                 (append *upper-window-rows*
+                         (list (make-array 0 :element-type 'character
+                                             :adjustable t :fill-pointer 0)))))
+  (nth n *upper-window-rows*))
+
+(defun upper-window-put (char)
+  "Write one character at the upper window cursor"
+  (if (char= char #\Newline)
+      (progn (incf *upper-window-row*)
+             (setf *upper-window-col* 0))
+      (let ((row (upper-window-row *upper-window-row*)))
+        (loop while (< (fill-pointer row) *upper-window-col*)
+              do (vector-push-extend #\Space row))
+        (if (< *upper-window-col* (fill-pointer row))
+            (setf (aref row *upper-window-col*) char)
+            (vector-push-extend char row))
+        (incf *upper-window-col*))))
+
+(defun upper-window-write (text)
+  "Write a string at the upper window cursor"
+  (loop for c across text do (upper-window-put c)))
+
+(defun upper-window-clear ()
+  "Forget the contents of the upper window"
+  (setf *upper-window-rows* nil
+        *upper-window-row* 0
+        *upper-window-col* 0))
+
+(defun upper-window-flush ()
+  "Draw what the story wrote into the upper window as status lines.
+There is no screen model here, so the rows are printed where the cursor
+happens to be, in the status style, rather than pinned to the top."
+  (let ((rows (remove-if (lambda (r) (zerop (length (string-right-trim " " r))))
+                         *upper-window-rows*)))
+    (when rows
+      (dolist (row rows)
+        (let* ((text (string-right-trim " " row))
+               (gap (- *status-line-width* (display-width text)))
+               (line (concatenate 'string text
+                                  (make-string (max 0 gap)
+                                               :initial-element #\Space))))
+          (if (ansi-available-p)
+              (format *standard-output* "~&~C[0;~Am~A~C[0m~%"
+                      #\Escape *ansi-status* line #\Escape)
+              (format *standard-output* "~&~A~%" line))))
+      (setf *ansi-current* nil)
+      (setf *status-line-shown* t)
+      (force-output *standard-output*)))
+  (upper-window-clear))
+
+(defun split-upper-window (lines)
+  "VAR:10 split_window"
+  (setf *upper-window-height* lines)
+  (when (zerop lines)
+    (upper-window-clear)))
+
+(defun select-window (window)
+  "VAR:11 set_window. Leaving the upper window draws what it holds."
+  (when (and (= *current-window* 1) (/= window 1))
+    (upper-window-flush))
+  (setf *current-window* window)
+  (when (= window 1)
+    (setf *upper-window-row* 0 *upper-window-col* 0)))
+
+(defun set-window-cursor (line column)
+  "VAR:15 set_cursor, 1-based, only meaningful in the upper window"
+  (when (= *current-window* 1)
+    (setf *upper-window-row* (max 0 (1- line))
+          *upper-window-col* (max 0 (1- column)))))
+
 (defun zm-print (text)
   "Print text to Z-machine output"
+  ;; The upper window is captured, not streamed
+  (when (= *current-window* 1)
+    (upper-window-write text)
+    (return-from zm-print))
   ;; Check for prompt character before printing
   (if (find #\> text)
       (progn (before-prompt) (ansi-style nil))
@@ -343,6 +444,10 @@ has to be picked up explicitly before the translations are printed."
 
 (defun zm-print-char (char)
   "Print a character to Z-machine output"
+  ;; The upper window is captured, not streamed
+  (when (= *current-window* 1)
+    (upper-window-put char)
+    (return-from zm-print-char))
   ;; Check for prompt character before printing
   (if (char= char #\>)
       (progn (before-prompt) (ansi-style nil))

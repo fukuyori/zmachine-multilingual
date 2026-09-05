@@ -101,15 +101,11 @@
 
 ;;; VAR:10 - split_window lines
 (defop *opcodes-var* 10 split_window (operands)
-  (declare (ignore operands))
-  ;; Window splitting not implemented
-  )
+  (split-upper-window (first operands)))
 
 ;;; VAR:11 - set_window window
 (defop *opcodes-var* 11 set_window (operands)
-  (declare (ignore operands))
-  ;; Window management not implemented
-  )
+  (select-window (first operands)))
 
 ;;; VAR:12 - call_vs2 routine ...args -> (result) [V4+]
 (defop *opcodes-var* 12 call_vs2 (operands)
@@ -117,9 +113,11 @@
 
 ;;; VAR:13 - erase_window window [V4+]
 (defop *opcodes-var* 13 erase_window (operands)
-  (declare (ignore operands))
-  ;; Clear screen (simplified)
-  (format t "~%~%"))
+  (let ((window (to-signed (first operands))))
+    (case window
+      (1 (upper-window-clear))
+      (-1 (split-upper-window 0) (upper-window-clear))
+      (otherwise (format t "~%~%")))))
 
 ;;; VAR:14 - erase_line value [V4+]
 (defop *opcodes-var* 14 erase_line (operands)
@@ -127,16 +125,16 @@
 
 ;;; VAR:15 - set_cursor line column [V4+]
 (defop *opcodes-var* 15 set_cursor (operands)
-  (declare (ignore operands)))
+  (set-window-cursor (first operands) (or (second operands) 1)))
 
 ;;; VAR:16 - get_cursor array [V4+]
 (defop *opcodes-var* 16 get_cursor (operands)
-  (zm-write-word (first operands) 1)   ; row
-  (zm-write-word (+ (first operands) 2) 1)) ; column
+  (zm-write-word (first operands) (1+ *upper-window-row*))
+  (zm-write-word (+ (first operands) 2) (1+ *upper-window-col*)))
 
 ;;; VAR:17 - set_text_style style [V4+]
 (defop *opcodes-var* 17 set_text_style (operands)
-  (declare (ignore operands)))
+  (set-text-style (first operands)))
 
 ;;; VAR:18 - buffer_mode flag [V4+]
 (defop *opcodes-var* 18 buffer_mode (operands)
@@ -262,3 +260,67 @@
                       (call-frame-local-count frame)
                       0)))
     (do-branch (<= arg-num supplied))))
+
+;;; ============================================================
+;;; Extended Opcodes (0xBE prefix) [V5+]
+;;;
+;;; V6-only picture and window opcodes (EXT:5-8, 13+) are deliberately
+;;; absent; they are reported by the unknown-opcode path instead.
+;;; ============================================================
+
+;;; EXT:0 - save table bytes name -> (result) [V5+]
+(defop *opcodes-ext* 0 save_table (operands)
+  (declare (ignore operands))
+  ;; Saving an auxiliary table to a file is not supported
+  (store-result (fetch-store) 0))
+
+;;; EXT:1 - restore table bytes name -> (result) [V5+]
+(defop *opcodes-ext* 1 restore_table (operands)
+  (declare (ignore operands))
+  (store-result (fetch-store) 0))
+
+;;; EXT:2 - log_shift number places -> (result) [V5+]
+(defop *opcodes-ext* 2 log_shift (operands)
+  ;; NUMBER is unsigned, so a right shift fills with zeros
+  (store-result (fetch-store)
+                (logand (ash (first operands) (to-signed (second operands)))
+                        #xFFFF)))
+
+;;; EXT:3 - art_shift number places -> (result) [V5+]
+(defop *opcodes-ext* 3 art_shift (operands)
+  ;; NUMBER is signed, so a right shift keeps the sign
+  (store-result (fetch-store)
+                (to-unsigned (ash (to-signed (first operands))
+                                  (to-signed (second operands))))))
+
+;;; EXT:4 - set_font font -> (result) [V5+]
+(defop *opcodes-ext* 4 set_font (operands)
+  ;; Only the normal font is available; return the previous font, or 0
+  ;; when the requested one cannot be provided
+  (store-result (fetch-store)
+                (if (member (first operands) '(0 1 4)) 1 0)))
+
+;;; EXT:9 - save_undo -> (result) [V5+]
+(defop *opcodes-ext* 9 save_undo (operands)
+  (declare (ignore operands))
+  ;; -1 tells the story that undo is not provided
+  (store-result (fetch-store) #xFFFF))
+
+;;; EXT:10 - restore_undo -> (result) [V5+]
+(defop *opcodes-ext* 10 restore_undo (operands)
+  (declare (ignore operands))
+  (store-result (fetch-store) 0))
+
+;;; EXT:11 - print_unicode char [V5+]
+(defop *opcodes-ext* 11 print_unicode (operands)
+  (let ((code (first operands)))
+    (zm-print-char (if (and (plusp code) (< code #x110000))
+                       (code-char code)
+                       #\?))))
+
+;;; EXT:12 - check_unicode char -> (result) [V5+]
+(defop *opcodes-ext* 12 check_unicode (operands)
+  (let ((code (first operands)))
+    ;; 1 = can print, 2 = can receive, 3 = both
+    (store-result (fetch-store)
+                  (if (and (plusp code) (< code #x110000)) 3 0))))
