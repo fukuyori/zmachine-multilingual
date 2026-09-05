@@ -503,7 +503,7 @@ zmachine-multilingual/
 
 ## 変更履歴
 
-現在のバージョンは **0.6.1** です。リリース履歴は [CHANGELOG-jp.md](CHANGELOG-jp.md) を参照してください。
+現在のバージョンは **0.5.1** です。リリース履歴は [CHANGELOG-jp.md](CHANGELOG-jp.md) を参照してください。
 
 ## コントリビューション
 

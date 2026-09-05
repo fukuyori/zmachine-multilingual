@@ -508,7 +508,7 @@ zmachine-multilingual/
 
 ## Changelog
 
-Current version: **0.6.1**. See [CHANGELOG.md](CHANGELOG.md) for the release history.
+Current version: **0.5.1**. See [CHANGELOG.md](CHANGELOG.md) for the release history.
 
 ## Contributing
 
