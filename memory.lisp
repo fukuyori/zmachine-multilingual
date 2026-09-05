@@ -250,8 +250,40 @@ inc_chk, dec_chk and pull must overwrite the top item, not push a new one
 (defvar *interpreter-number* 6
   "Interpreter number reported to the story (6 = IBM PC)")
 
+(defvar *screen-pixel-width* 640
+  "Screen width in pixels reported to Version 6 stories.
+In Version 5 a screen unit is a character, so the unit size and the character
+size agree. In Version 6 a unit is a pixel, and a story that reads 80 by 24
+pixels concludes the screen is far too small to play on.")
+
+(defvar *screen-pixel-height* 480
+  "Screen height in pixels reported to Version 6 stories")
+
 (defvar *interpreter-version* (char-code #\F)
   "Interpreter version reported to the story")
+
+(defvar *declare-pictures* t
+  "Tell the story that pictures are available once a resource file is loaded.
+A story that believes it has no pictures stays in its text layout, which is
+often the more readable of the two here.")
+
+(defun declare-pictures-available (available)
+  "Set or clear the picture bits in the header"
+  (when *zm*
+    (let ((memory (zm-memory *zm*)))
+      ;; Flags 1 bit 1: pictures available (V6)
+      (when (= (zm-version *zm*) 6)
+        (setf (aref memory 1)
+              (if available
+                  (logior (aref memory 1) (ash 1 1))
+                  (logandc2 (aref memory 1) (ash 1 1)))))
+      ;; Flags 2 bit 3: the story wants to use pictures
+      (let ((flags2 (logior (ash (aref memory #x10) 8) (aref memory #x11))))
+        (setf flags2 (if available
+                         (logior flags2 (ash 1 3))
+                         (logandc2 flags2 (ash 1 3))))
+        (setf (aref memory #x10) (ldb (byte 8 8) flags2))
+        (setf (aref memory #x11) (ldb (byte 8 0) flags2))))))
 
 (defun configure-header (zm)
   "Declare what this interpreter can do, and how large the screen is"
@@ -296,10 +328,19 @@ inc_chk, dec_chk and pull must overwrite the top item, not push a new one
         (set-byte #x20 *screen-rows*)
         (set-byte #x21 *screen-columns*))
       (when (>= version 5)
-        (set-word #x22 *screen-columns*)   ; width in units
-        (set-word #x24 *screen-rows*)      ; height in units
-        (set-byte #x26 1)                  ; font width in units
-        (set-byte #x27 1)                  ; font height in units
+        (if (= version 6)
+            ;; V6 measures in pixels
+            (progn
+              (set-word #x22 *screen-pixel-width*)
+              (set-word #x24 *screen-pixel-height*)
+              (set-byte #x26 (max 1 (floor *screen-pixel-width* *screen-columns*)))
+              (set-byte #x27 (max 1 (floor *screen-pixel-height* *screen-rows*))))
+            ;; V5 measures in characters
+            (progn
+              (set-word #x22 *screen-columns*)
+              (set-word #x24 *screen-rows*)
+              (set-byte #x26 1)
+              (set-byte #x27 1)))
         (set-word #x32 #x0100))            ; standard revision 1.0
       zm)))
 
@@ -354,6 +395,20 @@ inc_chk, dec_chk and pull must overwrite the top item, not push a new one
         ;; Set as current instance
         (setf *zm* zm)
         
+        ;; A Version 6 story keeps its pictures in a separate file.
+        ;; Forget any earlier one first, or a story loaded after a Version 6
+        ;; one would be told it has pictures it does not have.
+        (when (fboundp 'clear-resources)
+          (funcall 'clear-resources))
+        (when (and (= (zm-version zm) 6) (fboundp 'find-resource-file))
+          (let ((resources (funcall 'find-resource-file filename)))
+            (when resources
+              (funcall 'load-resources resources))))
+        (declare-pictures-available
+         (and *declare-pictures*
+              (fboundp 'resources-loaded-p)
+              (funcall 'resources-loaded-p)))
+
         ;; V6 starts by calling a routine rather than jumping to an address
         (start-story zm)
 

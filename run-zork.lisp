@@ -29,6 +29,17 @@
 (set-translation-file "translations-ja.lisp")
 (set-glossary-file "glossary-ja.lisp")
 
+;; Version 6 pictures (optional)
+;; A Blorb resource file next to the story is found automatically, and its
+;; illustrations are drawn with sixel graphics when the terminal supports it.
+;; (setf *graphics-enabled* t)      ; draw even if the terminal is not detected
+;; (setf *picture-min-area* 2000)   ; show smaller pictures too
+;; (setf *declare-pictures* nil)    ; keep the story in its text layout
+
+;; Waiting for input (optional)
+;; (setf *keypress-hint* "[キーを押してください]")
+;; (setf *input-hint* "[コマンドを入力してください]")
+
 ;; Select language (change as needed)
 ;; This also loads glossaries/glossary-<lang>.lisp for terminology consistency
 (set-language :ja)  ; Japanese

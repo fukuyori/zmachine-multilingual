@@ -30,6 +30,7 @@
   ;; Translate and flush anything still pending before reading input
   (when (fboundp 'before-input)
     (funcall 'before-input))
+  (show-input-hint *input-hint*)
   (let* ((text-buffer (first operands))
          (parse-buffer (second operands))
          ;; Get input from user
@@ -155,7 +156,9 @@
 
 ;;; VAR:14 - erase_line value [V4+]
 (defop *opcodes-var* 14 erase_line (operands)
-  (declare (ignore operands)))
+  ;; Only value 1 is defined: erase from the cursor to the end of the line
+  (when (or (null (first operands)) (= (first operands) 1))
+    (upper-window-erase-line)))
 
 ;;; VAR:15 - set_cursor line column [V4+]
 (defop *opcodes-var* 15 set_cursor (operands)
@@ -176,7 +179,17 @@
 
 ;;; VAR:19 - output_stream stream table [V3+]
 (defop *opcodes-var* 19 output_stream (operands)
-  (declare (ignore operands)))
+  ;; 1 is the screen and 3 a table in memory. Streams 2 (transcript) and
+  ;; 4 (command script) are accepted and ignored.
+  (let ((stream (to-signed (first operands)))
+        (table (second operands)))
+    (case stream
+      (1 (setf *screen-output-enabled* t))
+      (-1 (setf *screen-output-enabled* nil))
+      (3 (when (and table (plusp table))
+           (open-memory-stream table)))
+      (-3 (close-memory-stream))
+      (otherwise nil))))
 
 ;;; VAR:20 - input_stream stream [V3+]
 (defop *opcodes-var* 20 input_stream (operands)
@@ -191,10 +204,15 @@
   (declare (ignore operands))
   (when (fboundp 'before-input)
     (funcall 'before-input))
+  (show-input-hint *keypress-hint*)
   (force-output)
+  ;; The key itself is not echoed, so the cursor stays on the hint
   ;; End of input is not an error: report a newline, as if the player had
   ;; pressed return
   (let ((char (read-char *standard-input* nil #\Newline)))
+    ;; On a terminal the Return that delivered this key has already been
+    ;; echoed, so the cursor sits one line below the hint
+    (erase-input-hint (input-tty-p))
     (store-result (fetch-store) (char-to-zscii char))))
 
 ;;; VAR:23 - scan_table x table len form -> (result) [V4+]
@@ -373,13 +391,30 @@
 
 ;;; EXT:5 - draw_picture picture-number y x [V6]
 (defop *opcodes-ext* 5 draw_picture (operands)
-  (declare (ignore operands)))
+  ;; The y and x coordinates are in pixels and cannot be honoured on a
+  ;; character terminal, so the picture is drawn where the text has reached
+  (draw-picture (first operands)))
 
 ;;; EXT:6 - picture_data picture-number array ?(label) [V6]
 (defop *opcodes-ext* 6 picture_data (operands)
-  (declare (ignore operands))
-  ;; No pictures are available, so the picture number is never valid
-  (do-branch nil))
+  ;; Height goes in word 0 and width in word 1. Picture 0 asks for the number
+  ;; of pictures and the release number of the picture file instead.
+  (let ((number (first operands))
+        (array (second operands)))
+    (cond
+      ((not (resources-loaded-p)) (do-branch nil))
+      ((zerop number)
+       (when (and array (plusp array))
+         (zm-write-word array (picture-count))
+         (zm-write-word (+ array 2) (or (blorb-release-number) 0)))
+       (do-branch (plusp (picture-count))))
+      ((picture-exists-p number)
+       (multiple-value-bind (w h) (picture-size number)
+         (when (and array (plusp array))
+           (zm-write-word array h)
+           (zm-write-word (+ array 2) w)))
+       (do-branch t))
+      (t (do-branch nil)))))
 
 ;;; EXT:7 - erase_picture picture-number y x [V6]
 (defop *opcodes-ext* 7 erase_picture (operands)

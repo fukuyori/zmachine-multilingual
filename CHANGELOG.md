@@ -5,6 +5,59 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.3] - 2026-09-05
+
+Version 6 illustrations are drawn in the terminal, and the status line works
+properly across Versions 4 to 6.
+
+### Added
+
+* **Version 6 pictures** (`blorb.lisp`, `graphics.lisp`). A Version 6 story
+  keeps its pictures in a separate Blorb resource file; that file is parsed,
+  matched to the story by its `IFhd` chunk, and picked up automatically from
+  the story's own directory.
+  * `draw_picture` renders through sixel, `picture_data` answers with the real
+    dimensions
+  * Only pictures above `*picture-min-area*` are drawn. A Version 6 story
+    builds its screen from small tiles - Zork Zero draws its border out of
+    forty-five by forty pieces - and drawing those one at a time in a terminal
+    is meaningless; the illustrations are far larger
+  * Each picture is converted once and cached
+  * `(show-picture n)`, `(list-pictures)`, `(graphics-status)`,
+    `(load-resources path)`
+  * `*graphics-enabled*` is `:auto`, so nothing is attempted unless the
+    terminal looks capable of sixel
+* **A sign that the story is waiting for input.** A story that reads without
+  printing a prompt of its own left the player facing a screen with no
+  indication anything was expected. `*keypress-hint*` and `*input-hint*` are
+  shown only when the cursor is at the start of a line, so a story's own
+  prompt is never doubled, and the hint is wiped as soon as the story writes
+  again.
+
+### Fixed
+
+* **`output_stream` did nothing, and it broke every status line.** A story
+  measures how wide a string will be by printing it to a table in memory
+  first, then positions the cursor and prints it for real. With the opcode
+  unimplemented the measuring pass went to the screen as well, so Planetfall's
+  room name came out as `DDeck Nine` and A Mind Forever Voyaging showed an
+  empty `Mode:` and `Time:`. Streams 1 (screen) and 3 (memory) now work.
+* **The upper window was thrown away after every draw.** It is a region that
+  persists, and a story that rewrites one field expects the rest to still be
+  there. Zork Zero updates only its turn counter, so the rest of its status
+  vanished; a status line that read the same as last turn disappeared as well.
+* **`erase_line` was a stub**, so a short value written over a longer one left
+  the tail of the old text behind.
+* **Only window 1 was treated as a status window.** Version 6 has eight, and
+  Zork Zero puts part of its status in window 7.
+* **Version 6 screen and cursor units are pixels, not characters.** Reporting
+  80 by 24 pixels made Scopa refuse to start, and taking cursor pixels for
+  cells pushed the whole status line off the right edge.
+
+### Changed
+
+* The README now shows what the interpreter looks like, in both languages.
+
 ## [0.5.2] - 2026-09-05
 
 The CZECH conformance suite now passes completely: 406 passed, 0 failed, which

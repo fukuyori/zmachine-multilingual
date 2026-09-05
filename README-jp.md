@@ -28,6 +28,17 @@ Common Lisp で書かれた Z-machine インタプリタです。Zork などの�
 * 翻訳のキャッシュと永続化
 * ゲーム状態のセーブ/リストア
 
+## スクリーンショット
+
+日本語で遊ぶ Zork I。原文は減光、その下に訳文が続き、ステータス行には部屋名が
+両言語で表示されます。
+
+![日本語訳付きの Zork I](images/screenshot1.png)
+
+バージョン 6 の作品 Arthur。作品の挿絵を sixel でターミナルに描画しています。
+
+![Arthur のバージョン 6 挿絵](images/screenshot2.png)
+
 ## 動作要件
 
 * SBCL (Steel Bank Common Lisp)
@@ -326,6 +337,46 @@ time game のストーリーでは、代わりに `Time: hh:mm` を表示しま�
 訳は必ず不完全になり、キャッシュにも保存されません。翻訳バックエンドを使わずに遊ぶ
 場合にのみ有効化する価値があります。
 
+### バージョン 6 の画像表示
+
+バージョン 6 の作品は、画像を別の Blorb リソースファイルに持ちます。作品と同じ
+ディレクトリにあるものは自動で見つけます（`IFhd` チャンクのリリース番号・シリアル・
+チェックサムで対応を検証します）。挿絵は sixel でターミナルに描画されます。
+
+```lisp
+(load-story "games/zork0.z6")
+;; Resources loaded: 2213 pictures from ZorkZero.blb
+
+(load-resources "elsewhere/ZorkZero.blb")  ; 場所を明示する場合
+(graphics-status)                          ; リソース・端末・キャッシュの状態
+(list-pictures)                            ; 描画対象になる画像の一覧
+(show-picture 38)                          ; 番号を指定して手動描画
+```
+
+| 変数 | 既定値 | 説明 |
+|:--|:--|:--|
+| `*graphics-enabled*` | `:auto` | `T` で常に描画、`NIL` で無効、`:auto` は端末が sixel 対応かを判定 |
+| `*declare-pictures*` | `T` | 画像があることを作品に伝える。`NIL` なら作品はテキストレイアウトのまま |
+| `*picture-min-area*` | `10000` | この面積（ピクセル）未満はレイアウト部品とみなして描画しない |
+| `*picture-width*` | `400` | 表示時に縮小する幅（ピクセル） |
+| `*screen-pixel-width*` / `*screen-pixel-height*` | `640` / `480` | バージョン 6 の作品に伝える画面サイズ。バージョン 6 はピクセル単位で判断します |
+
+バージョン 6 の作品は画面を小さなタイルで組み立てます（Zork Zero は 45×40 の部品で
+枠を描きます）。ターミナルで 1 枚ずつ出しても意味がないため、大きな画像だけを表示
+します。ピクセル単位の配置も再現できません。画像は本文の位置に出て、上部ウィンドウは
+ステータスバーになります。
+
+### 入力待ちの表示
+
+作品が自前のプロンプトを出さずに入力を待つと、画面上は処理が終わったように見えて
+しまいます。その場合にだけ待機中であることを表示します。作品自身のプロンプトとは
+重複せず、作品が次に何か出力した時点で消えます。
+
+| 変数 | 既定値 | 説明 |
+|:--|:--|:--|
+| `*keypress-hint*` | `"[press a key]"` | キー入力待ちのときの表示。`NIL` で非表示 |
+| `*input-hint*` | `"[type a command]"` | コマンド入力待ちのときの表示。`NIL` で非表示 |
+
 ### 翻訳管理
 
 ```lisp
@@ -435,6 +486,8 @@ zmachine-multilingual/
 ├── glossary.lisp           # 用語集（訳語の統一）
 ├── translate.lisp          # 翻訳システム
 ├── ollama.lisp             # Ollama バックエンド
+├── blorb.lisp              # Blorb リソースファイル
+├── graphics.lisp           # バージョン 6 の画像表示
 ├── languages.lisp          # 言語定義
 ├── run-zork.lisp           # 起動スクリプト
 ├── zmachine.asd            # ASDF システム定義
@@ -476,6 +529,10 @@ zmachine-multilingual/
 
 * **translate.lisp**：多言語対応の中核。翻訳キャッシュの管理、翻訳プロンプトの生成、Ollama/DeepL/Claude API との連携、翻訳データの保存/読み込みを実装。
 
+* **blorb.lisp**：Blorb リソースファイル。バージョン 6 の作品のリソースファイルから画像索引を解析し、ストーリーとの対応を検証する。
+
+* **graphics.lisp**：バージョン 6 の画像表示。画像の縮小、誤差拡散を伴う減色、sixel へのエンコードとキャッシュを行う。
+
 * **ollama.lisp**：ローカル LLM（Ollama）バックエンド。モデルの選択、一覧表示、生成リクエストを担当。
 
 * **languages.lisp**：対応言語の定義。言語コード、英語名、ネイティブ名のテーブルを持つ。
@@ -515,7 +572,7 @@ zmachine-multilingual/
 
 ## 変更履歴
 
-現在のバージョンは **0.5.2** です。リリース履歴は [CHANGELOG-jp.md](CHANGELOG-jp.md) を参照してください。
+現在のバージョンは **0.5.3** です。リリース履歴は [CHANGELOG-jp.md](CHANGELOG-jp.md) を参照してください。
 
 ## コントリビューション
 

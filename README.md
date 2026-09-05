@@ -28,6 +28,18 @@ A Z-machine interpreter written in Common Lisp. Play classic text adventures lik
 * Translation caching and persistence
 * Save/Restore game state
 
+## Screenshots
+
+Zork I in Japanese. The original English is dimmed, the translation follows it,
+and the status line carries the room name in both languages.
+
+![Zork I with Japanese translation](images/screenshot1.png)
+
+Arthur, a Version 6 story. Its illustration is drawn in the terminal with sixel
+graphics, above the same bilingual text.
+
+![Arthur with a Version 6 illustration](images/screenshot2.png)
+
 ## Requirements
 
 * SBCL (Steel Bank Common Lisp)
@@ -333,6 +345,49 @@ occurs inside the line. The answer is a fragment, so it is incomplete by
 construction, and it is never cached. It is only worth enabling when playing
 without a translation backend.
 
+### Version 6 Pictures
+
+A Version 6 story keeps its pictures in a separate Blorb resource file. One
+sitting in the story's own directory is found automatically - it is matched
+against the story by the release number, serial and checksum in its `IFhd`
+chunk - and its illustrations are drawn in the terminal with sixel graphics.
+
+```lisp
+(load-story "games/zork0.z6")
+;; Resources loaded: 2213 pictures from ZorkZero.blb
+
+(load-resources "elsewhere/ZorkZero.blb")  ; or say where it is
+(graphics-status)                          ; resources, terminal, cache
+(list-pictures)                            ; what would be drawn
+(show-picture 38)                          ; draw one by hand
+```
+
+| Variable | Default | Description |
+|:--|:--|:--|
+| `*graphics-enabled*` | `:auto` | `T` always draws, `NIL` never, `:auto` when the terminal looks capable of sixel |
+| `*declare-pictures*` | `T` | Tell the story it has pictures. `NIL` keeps it in its text layout |
+| `*picture-min-area*` | `10000` | Pictures smaller than this many pixels are treated as layout pieces and skipped |
+| `*picture-width*` | `400` | Width in pixels a picture is scaled to |
+| `*screen-pixel-width*` / `*screen-pixel-height*` | `640` / `480` | Screen size reported to Version 6 stories, which measure in pixels |
+
+A Version 6 story builds its screen out of small tiles - Zork Zero draws its
+border from forty-five by forty pieces - and drawing those one at a time in a
+terminal is meaningless, so only the larger pictures are shown. The story's
+pixel placement cannot be reproduced either: a picture appears where the text
+has reached, and the upper window becomes a status bar.
+
+### Waiting for Input
+
+A story that reads without printing a prompt of its own would leave the screen
+looking finished when it is really waiting. A hint is shown in those cases
+only, so a story's own prompt is never doubled, and it is wiped as soon as the
+story writes again.
+
+| Variable | Default | Description |
+|:--|:--|:--|
+| `*keypress-hint*` | `"[press a key]"` | Shown when a single keypress is wanted. `NIL` shows nothing |
+| `*input-hint*` | `"[type a command]"` | Shown when a line is wanted. `NIL` shows nothing |
+
 ### Translation Management
 
 ```lisp
@@ -442,6 +497,8 @@ zmachine-multilingual/
 ├── glossary.lisp           # Glossary (terminology consistency)
 ├── translate.lisp          # Translation system
 ├── ollama.lisp             # Ollama backend
+├── blorb.lisp              # Blorb resource files
+├── graphics.lisp           # Version 6 pictures
 ├── languages.lisp          # Language definitions
 ├── run-zork.lisp           # Launch script
 ├── zmachine.asd            # ASDF system definition
@@ -483,6 +540,10 @@ zmachine-multilingual/
 
 * **translate.lisp**: Core of multilingual support. Implements translation cache management, prompt construction, Ollama/DeepL/Claude API integration, and translation data save/load.
 
+* **blorb.lisp**: Blorb resource files. Parses the picture index of a Version 6 story's resource file and matches it to the story.
+
+* **graphics.lisp**: Version 6 pictures. Scales a picture, reduces it to a fixed palette with ordered dithering, encodes it as sixel and caches the result.
+
 * **ollama.lisp**: Local LLM backend. Handles model selection, model listing, and generation requests.
 
 * **languages.lisp**: Supported language definitions. Contains a table of language codes, English names, and native names.
@@ -522,7 +583,7 @@ zmachine-multilingual/
 
 ## Changelog
 
-Current version: **0.5.2**. See [CHANGELOG.md](CHANGELOG.md) for the release history.
+Current version: **0.5.3**. See [CHANGELOG.md](CHANGELOG.md) for the release history.
 
 ## Contributing
 

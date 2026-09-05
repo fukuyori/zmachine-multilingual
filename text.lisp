@@ -364,6 +364,91 @@ exhausted the heap.")
     (get-output-stream-string (zm-output-buffer *zm*))
     (setf *output-buffer-count* 0)))
 
+(defvar *memory-streams* nil
+  "Open output stream 3 redirections, innermost first, as (table . count).
+A story measures how wide a string will be by printing it to a table in
+memory rather than to the screen. With this unimplemented the measuring pass
+was printed as well, which is why a centred room name appeared twice.")
+
+(defvar *screen-output-enabled* t
+  "Whether output stream 1, the screen, is selected")
+
+(defun memory-stream-active-p ()
+  (and *memory-streams* t))
+
+(defun open-memory-stream (table)
+  "Send output to TABLE instead of the screen"
+  (push (cons table 0) *memory-streams*))
+
+(defun close-memory-stream ()
+  "Stop redirecting, and record how many bytes were written"
+  (let ((entry (pop *memory-streams*)))
+    (when entry
+      (zm-write-word (car entry) (cdr entry)))))
+
+(defun memory-stream-write (text)
+  "Append TEXT to the innermost open memory stream"
+  (let ((entry (first *memory-streams*)))
+    (loop for c across text
+          do (zm-write-byte (+ (car entry) 2 (cdr entry)) (char-to-zscii c))
+             (incf (cdr entry)))))
+
+(defvar *at-line-start* t
+  "Whether the last thing printed ended a line. A story that asks for input
+without printing a prompt of its own leaves the player looking at a screen
+that gives no sign it is waiting.")
+
+(defvar *keypress-hint* "[press a key]"
+  "Shown when a story waits for a single keypress without prompting.
+NIL shows nothing.")
+
+(defvar *input-hint* "[type a command]"
+  "Shown when a story waits for a line without prompting. NIL shows nothing.")
+
+(defvar *hint-showing* nil
+  "Length of the hint currently on screen, so it can be wiped again")
+
+(defun show-input-hint (hint)
+  "Say that input is expected, unless the story already said so"
+  (when (and hint *at-line-start*)
+    (if (ansi-available-p)
+        (format *standard-output* "~C[0;~Am~A~C[0m " #\Escape *ansi-status*
+                hint #\Escape)
+        (format *standard-output* "~A " hint))
+    (setf *ansi-current* nil)
+    (setf *at-line-start* nil)
+    (setf *hint-showing* (1+ (display-width hint)))
+    (force-output *standard-output*)))
+
+(defun input-tty-p ()
+  "NIL only when standard input is known not to be a terminal"
+  (handler-case
+      (not (eql 0 (sb-unix:unix-isatty
+                   (sb-sys:fd-stream-fd sb-sys:*stdin*))))
+    (error () t)))
+
+(defun erase-input-hint (&optional cursor-moved-down)
+  "Wipe the waiting-for-input hint.
+Input is line buffered, so a keypress is really a keypress followed by
+Return, and the terminal echoes that Return before we ever see the key. The
+cursor is then a line below the hint, and clearing the current line would
+leave the hint standing. CURSOR-MOVED-DOWN says to step back up first."
+  (when *hint-showing*
+    (cond
+      ((ansi-available-p)
+       (when cursor-moved-down
+         (format *standard-output* "~C[A" #\Escape))
+       (format *standard-output* "~C~C[K" #\Return #\Escape))
+      (t
+       (when cursor-moved-down
+         (format *standard-output* "~C[A" #\Escape))
+       (format *standard-output* "~C~A~C" #\Return
+               (make-string *hint-showing* :initial-element #\Space)
+               #\Return)))
+    (setf *hint-showing* nil)
+    (setf *at-line-start* t)
+    (force-output *standard-output*)))
+
 (defvar *current-window* 0
   "Window the story is writing to: 0 = main text, 1 = upper window")
 
@@ -410,11 +495,32 @@ anything a text screen has.")
   "Write a string at the upper window cursor"
   (loop for c across text do (upper-window-put c)))
 
+(defun upper-window-erase-line ()
+  "VAR:14 erase_line: clear from the cursor to the end of the current row.
+Without this a shorter value written over a longer one leaves the tail of the
+old text behind."
+  (when (and (status-window-p *current-window*)
+             (< *upper-window-row* (fill-pointer *upper-window-rows*)))
+    (let ((row (aref *upper-window-rows* *upper-window-row*)))
+      (when (< *upper-window-col* (fill-pointer row))
+        (setf (fill-pointer row) *upper-window-col*)))))
+
 (defun upper-window-clear ()
   "Forget the contents of the upper window"
   (setf (fill-pointer *upper-window-rows*) 0
         *upper-window-row* 0
         *upper-window-col* 0))
+
+(defvar *status-line-min-content* 4
+  "Shortest upper window content still worth drawing as a status bar.
+The window keeps its contents between draws, so a story that rewrites a
+single field still produces the whole bar; this only skips a window that has
+next to nothing in it.")
+
+(defun status-content-worth-drawing-p (rows)
+  "Whether ROWS carry enough to be worth a bar of their own"
+  (>= (length (string-trim " " (format nil "~{~A~}" rows)))
+      *status-line-min-content*))
 
 (defun upper-window-flush ()
   "Draw what the story wrote into the upper window as status lines.
@@ -422,7 +528,7 @@ There is no screen model here, so the rows are printed where the cursor
 happens to be, in the status style, rather than pinned to the top."
   (let ((rows (remove-if (lambda (r) (zerop (length (string-right-trim " " r))))
                          (coerce *upper-window-rows* 'list))))
-    (when rows
+    (when (and rows (status-content-worth-drawing-p rows))
       (dolist (row rows)
         (let* ((text (string-right-trim " " row))
                (gap (- *status-line-width* (display-width text)))
@@ -435,8 +541,7 @@ happens to be, in the status style, rather than pinned to the top."
               (format *standard-output* "~&~A~%" line))))
       (setf *ansi-current* nil)
       (setf *status-line-shown* t)
-      (force-output *standard-output*)))
-  (upper-window-clear))
+      (force-output *standard-output*))))
 
 (defun split-upper-window (lines)
   "VAR:10 split_window"
@@ -444,28 +549,52 @@ happens to be, in the status style, rather than pinned to the top."
   (when (zerop lines)
     (upper-window-clear)))
 
+(defun status-window-p (window)
+  "Whether WINDOW is one of the ones captured into the status bar.
+Window 0 is the main text. Version 6 has eight windows and a story may use
+any of the others for decoration - Zork Zero puts part of its status in
+window 7 - so everything above zero is captured."
+  (plusp window))
+
 (defun select-window (window)
-  "VAR:11 set_window. Leaving the upper window draws what it holds."
-  (when (and (= *current-window* 1) (/= window 1))
+  "VAR:11 set_window. Leaving a status window draws what it holds."
+  (when (and (status-window-p *current-window*)
+             (not (status-window-p window)))
     (upper-window-flush))
   (setf *current-window* window)
-  (when (= window 1)
+  (when (status-window-p window)
     (setf *upper-window-row* 0 *upper-window-col* 0)))
 
 (defun set-window-cursor (line column)
   "VAR:15 set_cursor, 1-based, only meaningful in the upper window.
-Version 6 gives the position in pixels, so the values are clamped to
-something a text screen can actually hold."
-  (when (= *current-window* 1)
-    (setf *upper-window-row*
-          (min (max 0 (1- line)) (1- *upper-window-max-rows*)))
-    (setf *upper-window-col*
-          (min (max 0 (1- column)) (1- *status-line-width*)))))
+Version 6 gives the position in pixels rather than character cells, so it is
+divided by the font size the header reports. Taking pixels for cells put
+everything in the same place and ran the line off the right edge."
+  (when (status-window-p *current-window*)
+    (let ((row (1- line))
+          (col (1- column)))
+      (when (= (zm-version *zm*) 6)
+        (let ((font-width (max 1 (zm-read-byte #x26)))
+              (font-height (max 1 (zm-read-byte #x27))))
+          (setf row (floor row font-height))
+          (setf col (floor col font-width))))
+      (setf *upper-window-row*
+            (min (max 0 row) (1- *upper-window-max-rows*)))
+      (setf *upper-window-col*
+            (min (max 0 col) (1- *status-line-width*))))))
 
 (defun zm-print (text)
   "Print text to Z-machine output"
+  ;; Stream 3 takes precedence over everything else, and nothing reaches the
+  ;; screen while it is open
+  (when (memory-stream-active-p)
+    (memory-stream-write text)
+    (return-from zm-print))
+  (unless *screen-output-enabled*
+    (return-from zm-print))
+  (erase-input-hint)
   ;; The upper window is captured, not streamed
-  (when (= *current-window* 1)
+  (when (status-window-p *current-window*)
     (upper-window-write text)
     (return-from zm-print))
   ;; Check for prompt character before printing
@@ -474,6 +603,8 @@ something a text screen can actually hold."
       (ansi-style *ansi-source*))
   (write-string text (zm-output-buffer *zm*))
   (buffer-game-output (length text))
+  (when (plusp (length text))
+    (setf *at-line-start* (char= (char text (1- (length text))) #\Newline)))
   (write-string text *standard-output*)
   ;; Buffer for translation
   (when *bilingual-mode*
@@ -484,8 +615,14 @@ something a text screen can actually hold."
 
 (defun zm-print-char (char)
   "Print a character to Z-machine output"
+  (when (memory-stream-active-p)
+    (memory-stream-write (string char))
+    (return-from zm-print-char))
+  (unless *screen-output-enabled*
+    (return-from zm-print-char))
+  (erase-input-hint)
   ;; The upper window is captured, not streamed
-  (when (= *current-window* 1)
+  (when (status-window-p *current-window*)
     (upper-window-put char)
     (return-from zm-print-char))
   ;; Check for prompt character before printing
@@ -494,6 +631,7 @@ something a text screen can actually hold."
       (ansi-style *ansi-source*))
   (write-char char (zm-output-buffer *zm*))
   (buffer-game-output 1)
+  (setf *at-line-start* (char= char #\Newline))
   (write-char char *standard-output*)
   ;; Buffer for translation (don't buffer the prompt)
   (when (and *bilingual-mode* (not (char= char #\>)))

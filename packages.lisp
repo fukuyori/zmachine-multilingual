@@ -67,9 +67,25 @@
    #:*use-partial-matches*
    #:*partial-match-threshold*
 
+   ;; Version 6 graphics
+   #:load-resources
+   #:clear-resources
+   #:show-resources
+   #:show-picture
+   #:list-pictures
+   #:graphics-status
+   #:*graphics-enabled*
+   #:*declare-pictures*
+   #:*picture-min-area*
+   #:*picture-width*
+   #:*sixel-levels*
+   #:*sixel-dither*
+
    ;; Interpreter capabilities
    #:*screen-columns*
    #:*screen-rows*
+   #:*screen-pixel-width*
+   #:*screen-pixel-height*
    #:*interpreter-number*
    #:*strict-opcodes*
    #:*output-buffer-limit*
@@ -84,6 +100,9 @@
    #:show-status-line
    #:*status-line-enabled*
    #:*status-line-width*
+   #:*status-line-min-content*
+   #:*input-hint*
+   #:*keypress-hint*
 
    ;; Cache file settings
    #:set-translation-file
