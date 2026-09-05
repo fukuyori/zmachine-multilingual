@@ -39,9 +39,41 @@
    ;; API Setup
    #:setup-deepl
    #:setup-claude-api
-   
+   #:setup-ollama
+   #:set-ollama-model
+   #:list-ollama-models
+   #:*translation-backend*
+   #:*ollama-model*
+   #:*ollama-url*
+   #:*ollama-temperature*
+   #:*ollama-num-predict*
+   #:*ollama-think*
+   #:*claude-model*
+   #:*deepl-url*
+
+   ;; Glossary (terminology consistency)
+   #:add-glossary
+   #:remove-glossary
+   #:show-glossary
+   #:load-glossary
+   #:save-glossary
+   #:glossary-check
+   #:glossary-fix
+   #:*glossary*
+   #:*glossary-enabled*
+   #:*glossary-enforce*
+
+   ;; Cache file settings
+   #:set-translation-file
+   #:set-glossary-file
+   #:show-config
+   #:*translation-file*
+   #:*translations-dir*
+   #:*glossary-file*
+
    ;; Testing
    #:test-deepl-api
+   #:test-ollama
    #:test-curl
    #:check-environment))
 

@@ -21,7 +21,8 @@ A Z-machine interpreter written in Common Lisp. Play classic text adventures lik
 
 * Z-machine version 1-5 support
 * Bilingual display (English + translation)
-* Auto-translation via DeepL/Claude API
+* Auto-translation via Ollama (local LLM, any model), DeepL or Claude API
+* Glossary for consistent terminology
 * Translation caching and persistence
 * Save/Restore game state
 
@@ -29,6 +30,7 @@ A Z-machine interpreter written in Common Lisp. Play classic text adventures lik
 
 * SBCL (Steel Bank Common Lisp)
 * curl (for auto-translation)
+* Ollama (optional, for local LLM translation - no API key needed)
 
 ## Obtaining Story Files (.z3, .z5)
 
@@ -88,7 +90,11 @@ Edit the following sections in run-zork.lisp and run with SBCL.
 - Set up auto-translation
 
 ```lisp
-;; DeepL API (free tier available, recommended)
+;; Ollama (local LLM, no API key)
+(list-ollama-models)          ; show installed models
+(setup-ollama "qwen3.5:9b")   ; pick the model to translate with
+
+;; DeepL API (free tier available)
 (setup-deepl "your-api-key")
 
 ;; Or Claude API
@@ -97,11 +103,106 @@ Edit the following sections in run-zork.lisp and run with SBCL.
 
 Get a free DeepL API key at https://www.deepl.com/pro-api
 
+`*deepl-url*` selects the endpoint. Keep the default for a free key; set it to
+`https://api.deepl.com/v2/translate` for a Pro key. `(test-deepl-api)` shows the
+raw response and, when a request is rejected, the reason DeepL gives.
+
 - Run from command line
 
 ```bash
 sbcl --script run-zork.lisp
 ```
+
+### Cache File Names
+
+There is exactly one translation cache. It lives in `translations/`, is read at
+startup, and is written back as you play. By default it is
+`translations/translations-<language>.lisp` - the file that ships with the
+repository. Name a different one in `run-zork.lisp` to keep a separate cache per
+game or per playthrough; a bare file name goes inside `translations/` too.
+
+```lisp
+;; run-zork.lisp - must come before (set-language ...)
+(set-translation-file "zork2-ja.lisp")   ; -> translations/zork2-ja.lisp
+(set-glossary-file "zork2-ja-glossary.lisp")
+
+(set-language :ja)
+```
+
+```lisp
+(show-config)                        ; what the settings resolve to
+(set-translation-file nil)           ; back to the language-derived name
+```
+
+| Variable | Default | Description |
+|:--|:--|:--|
+| `*translation-file*` | `NIL` | Cache file name, `NIL` = `translations-<language>.lisp` |
+| `*translations-dir*` | `"translations/"` | Directory the cache lives in |
+| `*glossary-file*` | `NIL` | Glossary file name, `NIL` = `glossary-<language>.lisp` |
+| `*glossaries-dir*` | `"glossaries/"` | Directory the glossary lives in |
+
+The glossary works exactly the same way: one file in `glossaries/`, read at
+startup and rewritten by `(save-glossary)`.
+
+A name that already contains a directory, such as `"saves/mine-ja.lisp"`, is
+used as given instead of being placed under `translations/` or `glossaries/`.
+
+A file that does not exist yet is reported at startup and created on the first
+save. Directories in the name are created as needed.
+
+### Local Translation with Ollama
+
+If an Ollama server is running, any installed model can be used - no API key required.
+
+```lisp
+(list-ollama-models)                 ; list available models
+(setup-ollama "gemma3:12b")          ; enable Ollama with this model
+(setup-ollama "qwen3.5:9b" "http://192.168.1.10:11434")  ; remote server
+(set-ollama-model "translategemma:12b")  ; switch model only
+(test-ollama)                        ; check connection and translation
+```
+
+Tuning variables:
+
+| Variable | Default | Description |
+|:--|:--|:--|
+| `*ollama-url*` | `"http://localhost:11434"` | Ollama server URL |
+| `*ollama-model*` | `"gemma3:4b"` | Model used for translation |
+| `*ollama-temperature*` | `0.2` | Lower = more consistent wording |
+| `*ollama-num-predict*` | `1024` | Maximum tokens to generate |
+| `*ollama-think*` | `nil` | Allow thinking output on reasoning models (slower) |
+
+Small models (around 4B) tend to garble word order. 9B-12B or larger is recommended.
+
+### Glossary (Terminology Consistency)
+
+Terms registered in `glossaries/glossary-<code>.lisp` are injected into the prompt
+whenever they appear in the source text, so the LLM always picks the same wording
+(Ollama and Claude backends). The glossary is loaded automatically with the language.
+
+```lisp
+;; glossaries/glossary-ja.lisp
+(add-glossary "brass lantern" "真鍮のランタン")
+(add-glossary "grue" "グルー")
+(add-glossary "trap door" "仕掛け扉")
+```
+
+```lisp
+(show-glossary)                    ; list registered terms
+(add-glossary "thief" "泥棒")      ; add at runtime
+(remove-glossary "thief")          ; remove
+(save-glossary)                    ; write glossary-ja.lisp to the current directory
+
+(glossary-check)                   ; find cached translations that break the glossary
+(glossary-fix)                     ; re-translate them through the API
+```
+
+When a translation drops a glossary term, it is retried once with that term
+emphasized (while `*glossary-enforce*` is `t`; set it to `nil` to disable).
+
+Avoid very common words such as `score` or `moves` - they are usually rendered with
+counters or particles and only produce false warnings. Register proper nouns and
+object names instead.
 
 ### Translation Management
 
@@ -115,7 +216,7 @@ sbcl --script run-zork.lisp
 ;; Auto-translate all untranslated
 (auto-translate-all)
 
-;; Show statistics
+;; Show statistics (backend, model and glossary state included)
 (translation-stats)
 
 ;; Save translations
@@ -208,10 +309,15 @@ zmachine-multilingual/
 ├── opcodes.lisp            # Basic opcodes (0OP/1OP/2OP)
 ├── opcodes-var.lisp        # Variable opcodes (VAR)
 ├── execute.lisp            # Execution loop
+├── settings.lisp           # Configuration file support
+├── glossary.lisp           # Glossary (terminology consistency)
 ├── translate.lisp          # Translation system
+├── ollama.lisp             # Ollama backend
 ├── languages.lisp          # Language definitions
 ├── run-zork.lisp           # Launch script
 ├── zmachine.asd            # ASDF system definition
+├── glossaries/             # Glossary data
+│   └── glossary-ja.lisp
 └── translations/           # Translation data
     ├── translations-ja.lisp
     ├── translations-ko.lisp
@@ -242,14 +348,21 @@ zmachine-multilingual/
 
 * **execute.lisp**: Main execution loop. Decodes instructions, calls corresponding opcode functions, and repeats. Also manages routine calls and returns.
 
-* **translate.lisp**: Core of multilingual support. Implements translation cache management, DeepL/Claude API integration, and translation data save/load.
+* **settings.lisp**: Data file settings. Resolves which translation cache and glossary to read and write.
+
+* **glossary.lisp**: Glossary management. Extracts the terms occurring in the source text, injects them into the prompt, and audits or re-translates entries that break the glossary.
+
+* **translate.lisp**: Core of multilingual support. Implements translation cache management, prompt construction, Ollama/DeepL/Claude API integration, and translation data save/load.
+
+* **ollama.lisp**: Local LLM backend. Handles model selection, model listing, and generation requests.
 
 * **languages.lisp**: Supported language definitions. Contains a table of language codes, English names, and native names.
 
 ## Translation Data
 
-* Built-in translations are stored in `translations/translations-XX.lisp`
-* User translations are saved to `translations-XX.lisp` in the working directory
+* The translation cache is `translations/translations-XX.lisp`, or the name set with `set-translation-file`. The same file is read at startup and written back as you play
+* It is rewritten sorted by source text, so repeated saves produce the same file
+* The glossary is `glossaries/glossary-XX.lisp`, or the name set with `set-glossary-file`. Read at startup, rewritten by `(save-glossary)`
 * Automatically loaded on next startup
 
 ## References
@@ -273,6 +386,10 @@ zmachine-multilingual/
 
 * [Frotz - Z-Machine Interpreter](https://davidgriffith.gitlab.io/frotz/)
 * [Inform 7](http://inform7.com/)
+
+## Changelog
+
+Current version: **0.4.0**. See [CHANGELOG.md](CHANGELOG.md) for the release history.
 
 ## Contributing
 

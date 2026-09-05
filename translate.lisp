@@ -2,7 +2,8 @@
 ;;;;
 ;;;; Features:
 ;;;; - 10 language support
-;;;; - Auto-translation via DeepL/Claude API
+;;;; - Auto-translation via Ollama (local LLM) / DeepL / Claude API
+;;;; - Glossary-driven terminology consistency (see glossary.lisp)
 ;;;; - Translation caching and persistence
 
 (in-package :zmachine)
@@ -12,6 +13,11 @@
 ;;; ============================================================
 
 (defvar *current-language* :en "Current target language")
+(defvar *source-language*)
+
+;; Defined with their default values in ollama.lisp
+(defvar *ollama-url*)
+(defvar *ollama-model*)
 
 ;;; ============================================================
 ;;; Configuration
@@ -25,21 +31,13 @@
 (defvar *translations-modified* nil "Modification flag")
 (defvar *min-text-length-for-translation* 3 "Minimum text length")
 
-;; API keys
+;; API backend
+(defvar *translation-backend* nil
+  "Active translation backend: :ollama, :deepl, :claude or NIL (auto)")
 (defvar *deepl-api-key* nil)
 (defvar *anthropic-api-key* nil)
 (defvar *curl-available* :unknown)
-
-;;; ============================================================
-;;; Base Translation Data (English source texts)
-;;; ============================================================
-
-(defvar *base-texts* nil "List of translatable texts from Zork I")
-
-(defun load-base-translations ()
-  "Load base English texts (no translations yet)"
-  ;; This just initializes the table - actual translations come from language files
-  nil)
+(defvar *http-timeout* 180 "HTTP request timeout in seconds")
 
 ;;; ============================================================
 ;;; Core Translation Functions
@@ -143,21 +141,111 @@
 (defun setup-deepl (api-key)
   "Setup DeepL API"
   (setf *deepl-api-key* api-key)
+  (setf *translation-backend* :deepl)
   (setf *use-api-translation* t)
   (format t "DeepL API configured.~%"))
 
 (defun setup-claude-api (api-key)
   "Setup Claude API"
   (setf *anthropic-api-key* api-key)
+  (setf *translation-backend* :claude)
   (setf *use-api-translation* t)
   (format t "Claude API configured.~%"))
 
-(defun api-translate (text)
-  "Translate using configured API"
-  (cond
-    (*deepl-api-key* (deepl-translate text))
-    (*anthropic-api-key* (claude-translate text))
+(defun active-backend ()
+  "Backend actually used for API translation"
+  (or *translation-backend*
+      (cond (*deepl-api-key* :deepl)
+            (*anthropic-api-key* :claude))))
+
+(defun llm-backend-p (&optional (backend (active-backend)))
+  "True for prompt-driven backends that understand a glossary"
+  (member backend '(:ollama :claude)))
+
+(defun api-translate-once (text &optional emphasize)
+  "Single API call. EMPHASIZE is a list of (english . term) glossary pairs
+that the prompt should stress (LLM backends only)."
+  (case (active-backend)
+    (:ollama (ollama-translate text emphasize))
+    (:claude (claude-translate text emphasize))
+    (:deepl (deepl-translate text))
     (t nil)))
+
+(defun api-translate (text)
+  "Translate using configured API, keeping glossary terms consistent"
+  (let ((result (api-translate-once text)))
+    (when (and result *glossary-enabled* *glossary-enforce* (llm-backend-p))
+      (let ((missing (glossary-missing-terms text result)))
+        (when missing
+          (let ((retry (api-translate-once text missing)))
+            (when (and retry
+                       (< (length (glossary-missing-terms text retry))
+                          (length missing)))
+              (setf result retry))))))
+    result))
+
+;;; ------------------------------------------------------------
+;;; Prompt construction (shared by Ollama and Claude)
+;;; ------------------------------------------------------------
+
+(defun build-translation-prompt (text &optional emphasize)
+  "Build a translation prompt including the glossary terms found in TEXT"
+  (let* ((lang (get-language *current-language*))
+         (lang-name (if lang (language-name lang) "Japanese"))
+         (glossary (glossary-prompt-section text emphasize)))
+    (with-output-to-string (s)
+      (format s "You are a translator for the interactive fiction game Zork.~%")
+      (format s "Translate the English text below into ~A.~%" lang-name)
+      (when glossary
+        (format s "~%Glossary - when one of these English terms appears in the text, ")
+        (format s "translate it exactly like this:~%~A" glossary))
+      (format s "~%Rules:~%")
+      (format s "- Translate the complete text, every sentence, from beginning to end.~%")
+      (format s "- Output only the ~A translation: no explanations, no romanization, no quotation marks.~%"
+              lang-name)
+      (format s "- Keep the original line breaks and punctuation.~%")
+      (when emphasize
+        (format s "- The previous attempt ignored the glossary. These translations are mandatory: ~{~A~^, ~}~%"
+                (mapcar #'cdr emphasize)))
+      (format s "~%English text:~%~A~%" text)
+      (format s "~%~A translation of the complete text:" lang-name))))
+
+(defun clean-llm-output (text)
+  "Strip decorations LLMs tend to add around a translation"
+  (let ((result text))
+    ;; Remove <think>...</think> blocks
+    (let ((start (search "<think>" result)))
+      (when start
+        (let ((end (search "</think>" result)))
+          (setf result (if end
+                           (concatenate 'string (subseq result 0 start)
+                                        (subseq result (+ end 8)))
+                           (subseq result 0 start))))))
+    (setf result (string-trim '(#\Space #\Newline #\Return #\Tab) result))
+    ;; Remove a leading "Translation:" style label
+    (let ((colon (position #\: result)))
+      (when (and colon (< colon 20)
+                 (let ((head (subseq result 0 colon)))
+                   (and (ascii-string-p head)
+                        (search "translat" (string-downcase head)))))
+        (setf result (string-trim '(#\Space #\Newline #\Return #\Tab)
+                                  (subseq result (1+ colon))))))
+    ;; Remove wrapping quotes
+    (when (and (>= (length result) 2)
+               (char= (char result 0) #\")
+               (char= (char result (1- (length result))) #\")
+               (not (find #\" result :start 1 :end (1- (length result)))))
+      (setf result (subseq result 1 (1- (length result)))))
+    (if (> (length result) 0) result nil)))
+
+(defvar *deepl-url* "https://api-free.deepl.com/v2/translate"
+  "DeepL endpoint. Use https://api.deepl.com/v2/translate for a Pro key.")
+
+(defun deepl-auth-header ()
+  "DeepL requires the key in an Authorization header.
+The auth_key request parameter it used to accept is gone, and requests that
+still send it are rejected with 403."
+  (format nil "Authorization: DeepL-Auth-Key ~A" *deepl-api-key*))
 
 (defun deepl-translate (text)
   "Translate via DeepL API"
@@ -165,113 +253,55 @@
     (unless target-code
       (return-from deepl-translate nil))
     (handler-case
-        (let ((result (deepl-request text target-code)))
-          (when result
-            (extract-json-text result)))
+        (let ((response (deepl-request text target-code)))
+          (when response
+            (let ((message (json-string-field response "message")))
+              (when message
+                (format t "~&[DeepL error: ~A]~%" message)
+                (return-from deepl-translate nil)))
+            (let ((result (json-string-field response "text")))
+              (cond (result result)
+                    (t (format t "~&[DeepL: unexpected response: ~A]~%"
+                               (if (> (length response) 200)
+                                   (concatenate 'string (subseq response 0 200) "...")
+                                   response))
+                       nil)))))
       (error (e)
         (format t "DeepL error: ~A~%" e)
         nil))))
 
 (defun deepl-request (text target-lang)
-  "Make DeepL API request"
-  (if (curl-available-p)
-      (deepl-request-curl text target-lang)
-      (when (windows-p)
-        (deepl-request-powershell text target-lang))))
+  "POST one text to DeepL and return the raw response body"
+  (http-post-json *deepl-url*
+                  (format nil "{\"text\":[\"~A\"],\"source_lang\":\"~A\",\"target_lang\":\"~A\"}"
+                          (json-escape text)
+                          (json-escape *source-language*)
+                          (json-escape target-lang))
+                  (list (deepl-auth-header))))
 
-(defun deepl-request-curl (text target-lang)
-  "DeepL request via curl (supports long text)"
-  (let* ((temp-dir (or (sb-ext:posix-getenv "TEMP")
-                       (sb-ext:posix-getenv "TMP")
-                       "/tmp"))
-         (input-file (format nil "~A/deepl-input.txt" temp-dir))
-         (output-file (format nil "~A/deepl-output.txt" temp-dir)))
-    (handler-case
-        (progn
-          ;; Write POST data to input file
-          (with-open-file (out input-file :direction :output 
-                                          :if-exists :supersede
-                                          :external-format :latin-1)
-            (format out "auth_key=~A&text=~A&source_lang=EN&target_lang=~A"
-                    *deepl-api-key* (url-encode text) target-lang))
-          ;; Run curl with output to file
-          (sb-ext:run-program "curl"
-                              (list "-s" "-X" "POST"
-                                    "https://api-free.deepl.com/v2/translate"
-                                    "-d" (format nil "@~A" input-file)
-                                    "-o" output-file)
-                              :search t
-                              :wait t)
-          ;; Read result from output file
-          (let ((result nil))
-            (when (probe-file output-file)
-              (with-open-file (in output-file :direction :input
-                                              :external-format :utf-8
-                                              :if-does-not-exist nil)
-                (when in
-                  (setf result (make-string (file-length in)))
-                  (read-sequence result in))))
-            ;; Clean up
-            (when (probe-file input-file) (delete-file input-file))
-            (when (probe-file output-file) (delete-file output-file))
-            result))
-      (error (e) 
-        (format t "~&[DeepL error: ~A]~%" e)
-        nil))))
+(defvar *claude-model* "claude-3-5-haiku-latest" "Model used by the Claude backend")
 
-(defun deepl-request-powershell (text target-lang)
-  "DeepL request via PowerShell (supports long text)"
-  (let* ((temp-file (format nil "~A\\deepl-temp.txt" 
-                           (or (sb-ext:posix-getenv "TEMP") ".")))
-         (script (format nil 
-"$text = Get-Content -Path '~A' -Raw -Encoding UTF8
-$body = @{auth_key='~A'; text=$text; source_lang='EN'; target_lang='~A'}
-Invoke-RestMethod -Uri 'https://api-free.deepl.com/v2/translate' -Method Post -Body $body | ConvertTo-Json"
-                         temp-file *deepl-api-key* target-lang)))
-    ;; Write text to temp file
-    (with-open-file (out temp-file :direction :output 
-                                   :if-exists :supersede
-                                   :external-format :utf-8)
-      (write-string text out))
-    (let ((result (run-powershell script)))
-      ;; Clean up
-      (when (probe-file temp-file)
-        (delete-file temp-file))
-      result)))
-
-(defun claude-translate (text)
+(defun claude-translate (text &optional emphasize)
   "Translate via Claude API"
-  (let* ((lang (get-language *current-language*))
-         (lang-name (if lang (language-name lang) "Japanese")))
-    (handler-case
-        (let* ((prompt (format nil "Translate to ~A. Output ONLY the translation: ~A" 
-                              lang-name text))
-               (json-body (format nil "{\"model\":\"claude-3-haiku-20240307\",\"max_tokens\":1024,\"messages\":[{\"role\":\"user\",\"content\":\"~A\"}]}"
-                                 (json-escape prompt)))
-               (output (make-string-output-stream)))
-          (sb-ext:run-program "curl"
-                              (list "-s" "-X" "POST"
-                                    "https://api.anthropic.com/v1/messages"
-                                    "-H" "Content-Type: application/json"
-                                    "-H" (format nil "x-api-key: ~A" *anthropic-api-key*)
-                                    "-H" "anthropic-version: 2023-06-01"
-                                    "-d" json-body)
-                              :output output :error nil :search t)
-          (let ((result (get-output-stream-string output)))
-            (when (> (length result) 0)
-              (extract-json-text result))))
-      (error (e)
-        (format t "Claude error: ~A~%" e)
-        nil))))
+  (handler-case
+      (let* ((prompt (build-translation-prompt text emphasize))
+             (json-body (format nil "{\"model\":\"~A\",\"max_tokens\":1024,\"messages\":[{\"role\":\"user\",\"content\":\"~A\"}]}"
+                                (json-escape *claude-model*)
+                                (json-escape prompt)))
+             (response (http-post-json "https://api.anthropic.com/v1/messages"
+                                       json-body
+                                       (list (format nil "x-api-key: ~A" *anthropic-api-key*)
+                                             "anthropic-version: 2023-06-01"))))
+        (when response
+          (let ((result (extract-json-text response)))
+            (when result (clean-llm-output result)))))
+    (error (e)
+      (format t "Claude error: ~A~%" e)
+      nil)))
 
 (defun extract-json-text (json-str)
-  "Extract text from JSON response"
-  (let ((start (search "\"text\":\"" json-str)))
-    (when start
-      (let* ((begin (+ start 8))
-             (end (position #\" json-str :start begin)))
-        (when end
-          (unescape-json (subseq json-str begin end)))))))
+  "Extract the first \"text\" field from a JSON response"
+  (json-string-field json-str "text"))
 
 ;;; ============================================================
 ;;; Utilities
@@ -296,6 +326,134 @@ Invoke-RestMethod -Uri 'https://api-free.deepl.com/v2/translate' -Method Post -B
             (error () nil))))
   *curl-available*)
 
+(defvar *http-temp-counter* 0)
+
+(defun temp-directory ()
+  "Directory for temporary files"
+  (or (sb-ext:posix-getenv "TEMP")
+      (sb-ext:posix-getenv "TMP")
+      "/tmp"))
+
+(defun temp-file-path (name)
+  "Unique temporary file path"
+  (format nil "~A/zm-~A-~D" (temp-directory) name (incf *http-temp-counter*)))
+
+(defun read-text-file (path)
+  "Read a UTF-8 text file, NIL if missing"
+  (when (probe-file path)
+    (with-open-file (in path :direction :input
+                             :external-format :utf-8
+                             :if-does-not-exist nil)
+      (when in
+        (let* ((buffer (make-string (file-length in)))
+               (count (read-sequence buffer in)))
+          (subseq buffer 0 count))))))
+
+(defun write-text-file (path text)
+  "Write TEXT to PATH as UTF-8"
+  (with-open-file (out path :direction :output
+                            :if-exists :supersede
+                            :external-format :utf-8)
+    (write-string text out))
+  path)
+
+(defun delete-file-if-exists (path)
+  (ignore-errors
+   (when (probe-file path) (delete-file path))))
+
+(defun http-post-json (url json-body &optional headers)
+  "POST JSON-BODY to URL, return the response body as a string.
+HEADERS is a list of \"Name: value\" strings. UTF-8 safe on Windows."
+  (if (curl-available-p)
+      (http-post-json-curl url json-body headers)
+      (when (windows-p)
+        (http-post-json-powershell url json-body headers))))
+
+(defun http-post-json-curl (url json-body headers)
+  "POST JSON via curl using temp files (long text and UTF-8 safe)"
+  (let ((in-file (temp-file-path "req.json"))
+        (out-file (temp-file-path "res.json")))
+    (unwind-protect
+         (handler-case
+             (progn
+               (write-text-file in-file json-body)
+               (sb-ext:run-program
+                "curl"
+                (append (list "-s" "-S" "-X" "POST" url
+                              "-H" "Content-Type: application/json")
+                        (loop for h in headers append (list "-H" h))
+                        (list "--max-time" (format nil "~D" *http-timeout*)
+                              "--data-binary" (format nil "@~A" in-file)
+                              "-o" out-file))
+                :search t :wait t :error nil)
+               (read-text-file out-file))
+           (error (e)
+             (format t "~&[HTTP error: ~A]~%" e)
+             nil))
+      (delete-file-if-exists in-file)
+      (delete-file-if-exists out-file))))
+
+(defun ps-header-hashtable (headers)
+  "PowerShell hashtable literal for HTTP headers"
+  (if (null headers)
+      "@{}"
+      (with-output-to-string (s)
+        (format s "@{")
+        (loop for h in headers
+              for sep = "" then "; "
+              do (let ((colon (position #\: h)))
+                   (when colon
+                     (format s "~A'~A'='~A'" sep
+                             (ps-escape (string-trim " " (subseq h 0 colon)))
+                             (ps-escape (string-trim " " (subseq h (1+ colon))))))))
+        (format s "}"))))
+
+(defun http-post-json-powershell (url json-body headers)
+  "POST JSON via PowerShell (fallback when curl is unavailable)"
+  (let ((in-file (temp-file-path "req.json"))
+        (out-file (temp-file-path "res.json")))
+    (unwind-protect
+         (handler-case
+             (progn
+               (write-text-file in-file json-body)
+               (run-powershell
+                (format nil
+                        "$ErrorActionPreference='Stop'
+$body = [System.IO.File]::ReadAllBytes('~A')
+$r = Invoke-WebRequest -Uri '~A' -Method Post -Body $body -ContentType 'application/json' -Headers ~A -UseBasicParsing -TimeoutSec ~D
+[System.IO.File]::WriteAllText('~A', $r.Content, [System.Text.Encoding]::UTF8)"
+                        in-file (ps-escape url) (ps-header-hashtable headers)
+                        *http-timeout* out-file))
+               (read-text-file out-file))
+           (error (e)
+             (format t "~&[HTTP error: ~A]~%" e)
+             nil))
+      (delete-file-if-exists in-file)
+      (delete-file-if-exists out-file))))
+
+(defun http-get (url)
+  "GET URL, return the response body as a string"
+  (let ((out-file (temp-file-path "get.json")))
+    (unwind-protect
+         (handler-case
+             (progn
+               (if (curl-available-p)
+                   (sb-ext:run-program "curl"
+                                       (list "-s" "-S" "--max-time"
+                                             (format nil "~D" *http-timeout*)
+                                             url "-o" out-file)
+                                       :search t :wait t :error nil)
+                   (when (windows-p)
+                     (run-powershell
+                      (format nil
+                              "$ErrorActionPreference='Stop'
+$r = Invoke-WebRequest -Uri '~A' -UseBasicParsing -TimeoutSec ~D
+[System.IO.File]::WriteAllText('~A', $r.Content, [System.Text.Encoding]::UTF8)"
+                              (ps-escape url) *http-timeout* out-file))))
+               (read-text-file out-file))
+           (error () nil))
+      (delete-file-if-exists out-file))))
+
 (defun run-powershell (script)
   "Run PowerShell command"
   (let ((output (make-string-output-stream)))
@@ -306,32 +464,6 @@ Invoke-RestMethod -Uri 'https://api-free.deepl.com/v2/translate' -Method Post -B
                               :output output :error nil :search t)
           (get-output-stream-string output))
       (error () nil))))
-
-(defun url-encode (str)
-  "URL encode string (UTF-8 safe)"
-  (with-output-to-string (out)
-    (loop for c across str
-          for code = (char-code c)
-          do (cond
-               ((or (alphanumericp c) (find c "-_.~")) (write-char c out))
-               ((char= c #\Space) (write-string "%20" out))
-               ((< code 128) (format out "%~2,'0X" code))
-               ;; UTF-8 encode for non-ASCII
-               ((< code #x800)
-                (format out "%~2,'0X%~2,'0X"
-                        (logior #xC0 (ash code -6))
-                        (logior #x80 (logand code #x3F))))
-               ((< code #x10000)
-                (format out "%~2,'0X%~2,'0X%~2,'0X"
-                        (logior #xE0 (ash code -12))
-                        (logior #x80 (logand (ash code -6) #x3F))
-                        (logior #x80 (logand code #x3F))))
-               (t
-                (format out "%~2,'0X%~2,'0X%~2,'0X%~2,'0X"
-                        (logior #xF0 (ash code -18))
-                        (logior #x80 (logand (ash code -12) #x3F))
-                        (logior #x80 (logand (ash code -6) #x3F))
-                        (logior #x80 (logand code #x3F))))))))
 
 (defun ps-escape (str)
   "Escape for PowerShell"
@@ -349,7 +481,61 @@ Invoke-RestMethod -Uri 'https://api-free.deepl.com/v2/translate' -Method Post -B
         (#\" (write-string "\\\"" out))
         (#\\ (write-string "\\\\" out))
         (#\Newline (write-string "\\n" out))
-        (otherwise (write-char c out))))))
+        (#\Return (write-string "\\r" out))
+        (#\Tab (write-string "\\t" out))
+        (otherwise
+         (if (< (char-code c) 32)
+             (format out "\\u~4,'0X" (char-code c))
+             (write-char c out)))))))
+
+(defun json-read-string-at (json start)
+  "Read the JSON string starting at the opening quote at START.
+Returns (values unescaped-string index-after-closing-quote)"
+  (let ((out (make-string-output-stream))
+        (n (length json))
+        (i (1+ start)))
+    (loop
+      (when (>= i n) (return))
+      (let ((c (char json i)))
+        (cond ((and (char= c #\\) (< (1+ i) n))
+               ;; keep the escape sequence, unescape-json handles it later
+               (write-char c out)
+               (write-char (char json (1+ i)) out)
+               (incf i 2))
+              ((char= c #\") (incf i) (return))
+              (t (write-char c out) (incf i)))))
+    (values (unescape-json (get-output-stream-string out)) i)))
+
+(defun json-field-value-start (json key &optional (from 0))
+  "Index of the opening quote of KEY's string value, or NIL"
+  (let* ((pattern (format nil "\"~A\":" key))
+         (pos (search pattern json :start2 from)))
+    (when pos
+      (let ((i (+ pos (length pattern)))
+            (n (length json)))
+        (loop while (and (< i n)
+                         (member (char json i) '(#\Space #\Tab #\Newline #\Return)))
+              do (incf i))
+        (when (and (< i n) (char= (char json i) #\"))
+          i)))))
+
+(defun json-string-field (json key)
+  "Value of the first string field named KEY, or NIL"
+  (let ((start (json-field-value-start json key)))
+    (when start
+      (values (json-read-string-at json start)))))
+
+(defun json-string-fields (json key)
+  "Values of every string field named KEY, in order"
+  (let ((results nil)
+        (from 0))
+    (loop
+      (let ((start (json-field-value-start json key from)))
+        (unless start (return))
+        (multiple-value-bind (value next) (json-read-string-at json start)
+          (push value results)
+          (setf from next))))
+    (nreverse results)))
 
 (defun unescape-json (str)
   "Unescape JSON string"
@@ -414,9 +600,16 @@ Invoke-RestMethod -Uri 'https://api-free.deepl.com/v2/translate' -Method Post -B
   (format t "Language: ~A~%" *current-language*)
   (format t "Translations: ~D~%" (hash-table-count *translation-table*))
   (format t "Untranslated: ~D~%" (length *untranslated-log*))
-  (format t "API: ~A~%" (if *use-api-translation* "enabled" "disabled")))
+  (format t "API: ~A~%" (if *use-api-translation* "enabled" "disabled"))
+  (format t "Backend: ~A~%" (or (active-backend) "none"))
+  (when (eq (active-backend) :ollama)
+    (format t "Ollama model: ~A (~A)~%" *ollama-model* *ollama-url*))
+  (format t "Glossary: ~D terms (~A~A)~%"
+          (hash-table-count *glossary*)
+          (if *glossary-enabled* "enabled" "disabled")
+          (if (and *glossary-enabled* *glossary-enforce*) ", enforced" "")))
 
-(defun auto-translate-all (&optional (delay 1.0))
+(defun auto-translate-all (&optional (delay (if (eq (active-backend) :ollama) 0 1.0)))
   "Translate all untranslated via API"
   (unless *use-api-translation*
     (format t "API not configured.~%")
@@ -454,14 +647,20 @@ Invoke-RestMethod -Uri 'https://api-free.deepl.com/v2/translate' -Method Post -B
     (return-from test-deepl-api nil))
   (format t "Testing DeepL API...~%")
   (format t "Method: ~A~%" (if (curl-available-p) "curl" "PowerShell"))
+  (format t "URL   : ~A~%" *deepl-url*)
   (format t "Target: ~A~%" (get-deepl-target-code))
-  (let ((result (deepl-request "Hello" (get-deepl-target-code))))
-    (format t "Response: ~A~%" result)
-    (if (and result (search "text" result))
-        (progn
-          (format t "Translation: ~A~%" (extract-json-text result))
-          (format t "✓ API OK~%") t)
-        (progn (format t "✗ API Error~%") nil))))
+  (let ((response (deepl-request "Hello" (get-deepl-target-code))))
+    (format t "Response: ~A~%" response)
+    (let ((message (and response (json-string-field response "message")))
+          (result (and response (json-string-field response "text"))))
+      (cond ((null response)
+             (format t "✗ No response (is curl available?)~%") nil)
+            (message
+             (format t "✗ DeepL rejected the request: ~A~%" message) nil)
+            (result
+             (format t "Translation: ~A~%" result)
+             (format t "✓ API OK~%") t)
+            (t (format t "✗ Unexpected response~%") nil)))))
 
 (defun test-curl ()
   "Test curl"
@@ -476,5 +675,13 @@ Invoke-RestMethod -Uri 'https://api-free.deepl.com/v2/translate' -Method Post -B
   (format t "OS: ~A~%" (if (windows-p) "Windows" "Linux/Mac"))
   (format t "curl: ~A~%" (if (curl-available-p) "available" "not available"))
   (format t "Language: ~A~%" *current-language*)
+  (format t "Backend: ~A~%" (or (active-backend) "none"))
+  (format t "Ollama: ~A~%"
+          (let ((models (ollama-model-names)))
+            (if models
+                (format nil "~A (~D models, current: ~A)"
+                        *ollama-url* (length models) *ollama-model*)
+                (format nil "not reachable (~A)" *ollama-url*))))
+  (format t "Glossary: ~D terms~%" (hash-table-count *glossary*))
   (when (and (windows-p) (not (curl-available-p)))
     (format t "PowerShell: fallback~%")))

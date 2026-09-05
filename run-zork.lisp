@@ -22,13 +22,28 @@
 (asdf:load-system :zmachine)
 (in-package :zmachine)
 
+;; Data file names (must come before set-language)
+;; One translation cache in translations/ and one glossary in glossaries/, each
+;; read at startup and written back as you work. A bare file name is enough -
+;; use a different one to keep separate files per game, e.g. "zork2-ja.lisp".
+(set-translation-file "translations-ja.lisp")
+(set-glossary-file "glossary-ja.lisp")
+
 ;; Select language (change as needed)
+;; This also loads glossaries/glossary-<lang>.lisp for terminology consistency
 (set-language :ja)  ; Japanese
 
-;; Setup DeepL API (optional - get free API key at https://www.deepl.com/pro-api)
+;; Translation backend (optional - pick one)
+
+;; Ollama (local LLM - no API key needed, model name is free to choose)
+;; (list-ollama-models)              ; show installed models
+;; (setup-ollama "qwen3.5:9b")       ; select the model to translate with
+;; (setup-ollama "gemma3:12b" "http://192.168.1.10:11434")  ; remote server
+
+;; DeepL (get a free API key at https://www.deepl.com/pro-api)
 ;; (setup-deepl "your-api-key")
 
-;; Or Claude API
+;; Claude API
 ;; (setup-claude-api "your-anthropic-api-key")
 
 ;; Load story file (change path as needed)
@@ -42,3 +57,20 @@
 ;;; (auto-translate-all)     - Auto-translate via API
 ;;; (list-languages)         - Show available languages
 ;;; (set-language :fr)       - Change language
+;;;
+;;; Glossary (terminology consistency):
+;;; (show-glossary)          - Show glossary terms
+;;; (add-glossary "grue" "グルー")  - Add a term
+;;; (save-glossary)          - Save to glossary-ja.lisp
+;;; (glossary-check)         - Find translations that break the glossary
+;;; (glossary-fix)           - Re-translate them via API
+;;;
+;;; Cache files:
+;;; (show-config)            - Which files the current settings resolve to
+;;; (set-translation-file "zork1-ja.lisp")
+;;; (set-glossary-file "zork1-ja-glossary.lisp")
+;;;
+;;; Ollama:
+;;; (list-ollama-models)     - Show installed models
+;;; (set-ollama-model "gemma3:12b")  - Switch model
+;;; (test-ollama)            - Test the backend

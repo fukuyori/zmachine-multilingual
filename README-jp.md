@@ -21,7 +21,8 @@ Common Lisp で書かれた Z-machine インタプリタです。Zork などの�
 
 * Z-machine バージョン 1-5 対応
 * バイリンガル表示（英語 + 翻訳）
-* DeepL/Claude API による自動翻訳
+* Ollama（ローカル LLM・モデル指定可）/ DeepL / Claude API による自動翻訳
+* 用語集（glossary）による訳語の統一
 * 翻訳のキャッシュと永続化
 * ゲーム状態のセーブ/リストア
 
@@ -29,6 +30,7 @@ Common Lisp で書かれた Z-machine インタプリタです。Zork などの�
 
 * SBCL (Steel Bank Common Lisp)
 * curl（自動翻訳用）
+* Ollama（ローカル LLM で翻訳する場合。API キー不要）
 
 ## ストーリーファイル（.z3, .z5）の入手方法
 
@@ -88,7 +90,11 @@ run-zork.lisp の以下の箇所を修正し、SBCL で実行します。
 - 自動翻訳の設定
 
 ```lisp
-;; DeepL API（無料枠あり、推奨）
+;; Ollama（ローカル LLM・API キー不要）
+(list-ollama-models)          ; インストール済みモデルを一覧表示
+(setup-ollama "qwen3.5:9b")   ; 翻訳に使うモデルを指定
+
+;; DeepL API（無料枠あり）
 (setup-deepl "your-api-key")
 
 ;; または Claude API
@@ -97,11 +103,105 @@ run-zork.lisp の以下の箇所を修正し、SBCL で実行します。
 
 無料の DeepL API キーは https://www.deepl.com/pro-api で取得できます。
 
+`*deepl-url*` でエンドポイントを選べます。無料キーは既定のまま、Pro キーの場合は
+`https://api.deepl.com/v2/translate` を指定してください。`(test-deepl-api)` は生の
+レスポンスと、拒否された場合は DeepL が返す理由を表示します。
+
 - コマンドラインから起動
 
 ```bash
 sbcl --script run-zork.lisp
 ```
+
+### キャッシュファイル名の指定
+
+翻訳キャッシュは**1 つだけ**で、`translations/` の中に置かれます。起動時に読み込み、
+プレイ中に同じファイルへ書き戻します。既定はリポジトリに同梱されている
+`translations/translations-<言語>.lisp` です。`run-zork.lisp` で別名を指定すれば、
+ゲームごと・プレイスルーごとにキャッシュを分けられます。ファイル名だけを書けば
+`translations/` の中に置かれます。
+
+```lisp
+;; run-zork.lisp - (set-language ...) より前に書くこと
+(set-translation-file "zork2-ja.lisp")   ; -> translations/zork2-ja.lisp
+(set-glossary-file "zork2-ja-glossary.lisp")
+
+(set-language :ja)
+```
+
+```lisp
+(show-config)                        ; 設定がどのファイルに解決されるか
+(set-translation-file nil)           ; 言語別の名前に戻す
+```
+
+| 変数 | 既定値 | 説明 |
+|:--|:--|:--|
+| `*translation-file*` | `NIL` | キャッシュのファイル名。`NIL` なら `translations-<言語>.lisp` |
+| `*translations-dir*` | `"translations/"` | キャッシュを置くディレクトリ |
+| `*glossary-file*` | `NIL` | 用語集のファイル名。`NIL` なら `glossary-<言語>.lisp` |
+| `*glossaries-dir*` | `"glossaries/"` | 用語集を置くディレクトリ |
+
+用語集もまったく同じ扱いです。`glossaries/` の中の 1 ファイルを起動時に読み込み、
+`(save-glossary)` が同じファイルへ書き戻します。
+
+`"saves/mine-ja.lisp"` のようにディレクトリを含む名前を指定した場合は、
+`translations/` や `glossaries/` の下には置かず、その指定をそのまま使います。
+
+ファイルが存在しない場合は起動時にその旨を表示し、最初の保存時に作成します。
+名前にディレクトリが含まれていれば、そのディレクトリも作成します。
+
+### Ollama によるローカル翻訳
+
+Ollama が動いていれば、API キーなしで任意のモデルを翻訳に使えます。
+
+```lisp
+(list-ollama-models)                 ; 利用可能なモデル一覧
+(setup-ollama "gemma3:12b")          ; モデルを指定して有効化
+(setup-ollama "qwen3.5:9b" "http://192.168.1.10:11434")  ; リモートの Ollama
+(set-ollama-model "translategemma:12b")  ; モデルだけ切り替え
+(test-ollama)                        ; 接続と翻訳のテスト
+```
+
+調整用の変数：
+
+| 変数 | 既定値 | 説明 |
+|:--|:--|:--|
+| `*ollama-url*` | `"http://localhost:11434"` | Ollama サーバの URL |
+| `*ollama-model*` | `"gemma3:4b"` | 使用モデル |
+| `*ollama-temperature*` | `0.2` | 低いほど訳語がぶれない |
+| `*ollama-num-predict*` | `1024` | 生成する最大トークン数 |
+| `*ollama-think*` | `nil` | 推論モデルの thinking を許可（遅くなる） |
+
+小さいモデル（4B 程度）は語順や助詞が崩れることがあります。9B〜12B 以上を推奨します。
+
+### 用語集（glossary）による訳語の統一
+
+`glossaries/glossary-<言語コード>.lisp` に登録した用語は、原文に現れたときだけ
+プロンプトに差し込まれ、LLM に同じ訳語を使わせます（Ollama / Claude）。
+言語を選ぶと自動で読み込まれます。
+
+```lisp
+;; glossaries/glossary-ja.lisp
+(add-glossary "brass lantern" "真鍮のランタン")
+(add-glossary "grue" "グルー")
+(add-glossary "trap door" "仕掛け扉")
+```
+
+```lisp
+(show-glossary)                    ; 登録済みの用語を表示
+(add-glossary "thief" "泥棒")      ; 実行中に追加
+(remove-glossary "thief")          ; 削除
+(save-glossary)                    ; カレントディレクトリの glossary-ja.lisp に保存
+
+(glossary-check)                   ; 用語集に反する既存訳を検出
+(glossary-fix)                     ; 検出された訳を API で訳し直す
+```
+
+翻訳結果から用語集の訳語が抜け落ちた場合は、その語を強調して 1 回だけ再翻訳します
+（`*glossary-enforce*` が `t` のとき。無効にするには `nil` を設定）。
+
+`score` や `moves` のような一般的な語は、助詞や助数詞を伴って訳されるため
+誤検出の原因になります。固有名詞やアイテム名を中心に登録してください。
 
 ### 翻訳管理
 
@@ -115,7 +215,7 @@ sbcl --script run-zork.lisp
 ;; 未翻訳をすべて自動翻訳
 (auto-translate-all)
 
-;; 統計を表示
+;; 統計を表示（バックエンド・モデル・用語集の状態も表示）
 (translation-stats)
 
 ;; 翻訳を保存
@@ -208,10 +308,15 @@ zmachine-multilingual/
 ├── opcodes.lisp            # 基本オペコード (0OP/1OP/2OP)
 ├── opcodes-var.lisp        # 可変オペコード (VAR)
 ├── execute.lisp            # 実行ループ
+├── settings.lisp           # 設定ファイル対応
+├── glossary.lisp           # 用語集（訳語の統一）
 ├── translate.lisp          # 翻訳システム
+├── ollama.lisp             # Ollama バックエンド
 ├── languages.lisp          # 言語定義
 ├── run-zork.lisp           # 起動スクリプト
 ├── zmachine.asd            # ASDF システム定義
+├── glossaries/             # 用語集データ
+│   └── glossary-ja.lisp
 └── translations/           # 翻訳データ
     ├── translations-ja.lisp
     ├── translations-ko.lisp
@@ -242,14 +347,21 @@ zmachine-multilingual/
 
 * **execute.lisp**：メイン実行ループ。命令をデコードし、対応するオペコード関数を呼び出し、これを繰り返す。ルーチン呼び出しとリターンの管理も行う。
 
-* **translate.lisp**：多言語対応の中核。翻訳キャッシュの管理、DeepL/Claude API との連携、翻訳データの保存/読み込みを実装。
+* **settings.lisp**：データファイルの設定。どの翻訳キャッシュと用語集を読み書きするかを解決する。
+
+* **glossary.lisp**：用語集の管理。原文に含まれる用語の抽出、プロンプトへの差し込み、訳語が守られているかの検査と再翻訳を実装。
+
+* **translate.lisp**：多言語対応の中核。翻訳キャッシュの管理、翻訳プロンプトの生成、Ollama/DeepL/Claude API との連携、翻訳データの保存/読み込みを実装。
+
+* **ollama.lisp**：ローカル LLM（Ollama）バックエンド。モデルの選択、一覧表示、生成リクエストを担当。
 
 * **languages.lisp**：対応言語の定義。言語コード、英語名、ネイティブ名のテーブルを持つ。
 
 ## 翻訳データについて
 
-* 組み込み翻訳は `translations/translations-XX.lisp` に格納
-* ユーザー翻訳は作業ディレクトリの `translations-XX.lisp` に保存される
+* 翻訳キャッシュは `translations/translations-XX.lisp`、または `set-translation-file` で指定した名前。起動時に読み込むファイルと、プレイ中に書き戻すファイルは同じ
+* 保存時は原文でソートして書き出すので、同じ内容なら毎回同じファイルになる
+* 用語集は `glossaries/glossary-XX.lisp`、または `set-glossary-file` で指定した名前。起動時に読み込み、`(save-glossary)` が同じファイルへ書き戻す
 * 次回起動時に自動的に読み込まれる
 
 ## 参考資料
@@ -273,6 +385,10 @@ zmachine-multilingual/
 
 * [Frotz - Z-Machine Interpreter](https://davidgriffith.gitlab.io/frotz/)
 * [Inform 7](http://inform7.com/)
+
+## 変更履歴
+
+現在のバージョンは **0.4.0** です。リリース履歴は [CHANGELOG-jp.md](CHANGELOG-jp.md) を参照してください。
 
 ## コントリビューション
 

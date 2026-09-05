@@ -18,8 +18,7 @@
   (code nil :type keyword)        ; Internal code (:ja, :zh-hans, etc.)
   (name "" :type string)          ; English name
   (native-name "" :type string)   ; Native name
-  (deepl-code "" :type string)    ; DeepL API target language code
-  (file-name "" :type string))    ; Translation file name
+  (deepl-code "" :type string))   ; DeepL API target language code
 
 (defvar *languages* (make-hash-table :test 'eq)
   "Available languages")
@@ -36,9 +35,7 @@
         (make-language :code code
                        :name name
                        :native-name native-name
-                       :deepl-code deepl-code
-                       :file-name (format nil "translations-~A.lisp"
-                                         (string-downcase (symbol-name code))))))
+                       :deepl-code deepl-code)))
 
 (defun init-languages ()
   "Initialize all supported languages"
@@ -113,36 +110,22 @@
 ;;; Translation File Management
 ;;; ============================================================
 
-(defun translation-file-path (code)
-  "Get path to translation file for language"
-  (let ((lang (get-language code)))
-    (when lang
-      (merge-pathnames (language-file-name lang)
-                       (merge-pathnames "translations/" 
-                                       *default-pathname-defaults*)))))
-
 (defun load-language-translations (code)
   "Load translations for specified language"
   (clrhash *translation-table*)
   (setf *untranslated-log* nil)
   
-  ;; Load base translations (built-in)
-  (load-base-translations)
-  
-  ;; Load language-specific file if exists
-  (let ((file (translation-file-path code)))
-    (when (and file (probe-file file))
-      (let ((*auto-save-translations* nil))
-        (load file :external-format :utf-8)
-        (format t "Loaded: ~A~%" (file-namestring file)))))
-  
-  ;; Also load user translations file in current directory
-  (let ((user-file (format nil "translations-~A.lisp"
-                          (string-downcase (symbol-name code)))))
-    (when (probe-file user-file)
-      (let ((*auto-save-translations* nil))
-        (load user-file :external-format :utf-8)
-        (format t "Loaded user file: ~A~%" user-file)))))
+  ;; One cache file: the name comes from the configuration, or from the
+  ;; language code. It is also the file that translations are saved back to.
+  (let ((file (user-translation-file code)))
+    (if (probe-file file)
+        (let ((*auto-save-translations* nil))
+          (load file :external-format :utf-8)
+          (format t "Loaded: ~A~%" file))
+        (format t "Cache not found, starting empty: ~A~%" file)))
+
+  ;; Load the glossary for terminology consistency
+  (load-glossary code))
 
 (defun save-language-translations (&optional (code *current-language*))
   "Save translations for current language"
@@ -150,8 +133,12 @@
     (return-from save-language-translations nil))
   
   (let* ((lang (get-language code))
-         (filename (format nil "translations-~A.lisp"
-                          (string-downcase (symbol-name code)))))
+         (filename (user-translation-file code))
+         (entries nil))
+    (maphash (lambda (en trans) (push (cons en trans) entries)) *translation-table*)
+    ;; Sorted, so that saving twice produces the same file
+    (setf entries (sort entries #'string-lessp :key #'car))
+    (ensure-directories-exist filename)
     (with-open-file (out filename :direction :output 
                                   :if-exists :supersede
                                   :external-format :utf-8)
@@ -160,9 +147,9 @@
               (language-name lang) (language-native-name lang))
       (format out ";;;; Generated: ~A~%~%" (get-universal-time))
       (format out "(in-package :zmachine)~%~%")
-      (maphash (lambda (en trans)
-                 (format out "(add-trans ~S ~S)~%" en trans))
-               *translation-table*))))
+      (loop for (en . trans) in entries
+            do (format out "(add-trans ~S ~S)~%" en trans)))
+    filename))
 
 ;;; ============================================================
 ;;; API Integration

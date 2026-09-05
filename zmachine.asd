@@ -5,7 +5,7 @@
   :name "Z-machine Interpreter"
   :description "A Z-machine interpreter for running Infocom text adventures"
   :author "Claude"
-  :version "1.0.0"
+  :version "0.4.0"
   :license "MIT"
   :serial t
   :components ((:file "packages")
@@ -17,5 +17,8 @@
                (:file "opcodes")
                (:file "opcodes-var")
                (:file "execute")
+               (:file "settings")
+               (:file "glossary")
                (:file "translate")
+               (:file "ollama")
                (:file "languages")))
