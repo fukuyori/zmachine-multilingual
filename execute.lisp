@@ -148,6 +148,7 @@
           (let ((pc-before (zm-pc *zm*)))
             (multiple-value-bind (form op-count opcode operands)
                 (decode-instruction)
+              (declare (ignore form))
               (let* ((table (ecase op-count
                               (:0op *opcodes-0op*)
                               (:1op *opcodes-1op*)
