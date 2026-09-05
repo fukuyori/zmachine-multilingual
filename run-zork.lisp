@@ -65,6 +65,10 @@
 ;;; (glossary-check)         - Find translations that break the glossary
 ;;; (glossary-fix)           - Re-translate them via API
 ;;;
+;;; Appearance:
+;;; (setf *ansi-enabled* nil)   - Turn off colour
+;;; (setf *status-line-enabled* nil)  - Hide the status line
+;;;
 ;;; Cache files:
 ;;; (show-config)            - Which files the current settings resolve to
 ;;; (set-translation-file "zork1-ja.lisp")

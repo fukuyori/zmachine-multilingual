@@ -356,8 +356,7 @@
 ;;; 0OP:12 - show_status [V3]
 (defop *opcodes-0op* 12 show_status (operands)
   (declare (ignore operands))
-  ;; Status line is not implemented in this basic version
-  )
+  (show-status-line))
 
 ;;; 0OP:13 - verify ?(label)
 (defop *opcodes-0op* 13 verify (operands)

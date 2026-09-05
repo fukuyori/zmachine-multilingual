@@ -27,9 +27,9 @@
 
 ;;; VAR:4 - sread/read text parse [V1-3] / read text parse time routine [V4] / aread [V5+]
 (defop *opcodes-var* 4 read (operands)
-  ;; Flush translation block before input prompt
-  (when (fboundp 'flush-translation-block)
-    (funcall 'flush-translation-block))
+  ;; Translate and flush anything still pending before reading input
+  (when (fboundp 'before-input)
+    (funcall 'before-input))
   (let* ((text-buffer (first operands))
          (parse-buffer (second operands))
          ;; Get input from user

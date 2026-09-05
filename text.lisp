@@ -190,11 +190,148 @@
 (defvar *line-buffer* "" "Buffer for current line")
 (defvar *block-buffer* nil "Buffer for collecting multiple lines")
 
+;;; ============================================================
+;;; ANSI Styling
+;;;
+;;; The original English is dimmed, the translation is shown at normal
+;;; brightness, and the status line is drawn in reverse video, so the three
+;;; kinds of output are told apart at a glance. Escape sequences go only to
+;;; the terminal, never into the Z-machine output buffer.
+;;; ============================================================
+
+(defvar *ansi-enabled* t
+  "T always writes colour, NIL never does, :AUTO turns it off when output
+is not a terminal")
+
+(defvar *ansi-source* "2"
+  "SGR parameters for the original English (2 = dim)")
+
+(defvar *ansi-translation* "97"
+  "SGR parameters for the translation (97 = bright white)")
+
+(defvar *ansi-status* "44;97"
+  "SGR parameters for the status line (44;97 = bright white on blue)")
+
+(defvar *ansi-current* nil
+  "Style currently active on the terminal")
+
+(defun output-tty-p ()
+  "NIL only when standard output is known not to be a terminal"
+  (handler-case
+      (not (eql 0 (sb-unix:unix-isatty
+                   (sb-sys:fd-stream-fd sb-sys:*stdout*))))
+    (error () t)))
+
+(defun ansi-available-p ()
+  "Whether escape sequences should be written"
+  (cond ((null *ansi-enabled*) nil)
+        ((eq *ansi-enabled* :auto) (output-tty-p))
+        (t t)))
+
+(defun ansi-style (code)
+  "Switch the terminal to SGR CODE, or back to the default when CODE is NIL.
+Every style is preceded by a reset, because SGR parameters are additive:
+without it, bold applied over the grey of the source text would simply give
+bold grey rather than a bold default colour."
+  (when (and (ansi-available-p) (not (equal code *ansi-current*)))
+    (format *standard-output* "~C[0~@[;~A~]m" #\Escape code)
+    (setf *ansi-current* code)))
+
+;;; ============================================================
+;;; Status Line (V1-3)
+;;;
+;;; There is no screen model here, so the status line is printed as an
+;;; ordinary line just before the ">" prompt rather than pinned to the top
+;;; of the screen. In V1-3 the interpreter is responsible for drawing it
+;;; before each input; show_status draws it too, for the rare story that
+;;; asks explicitly.
+;;; ============================================================
+
+(defvar *status-line-enabled* t
+  "Show the status line before each prompt (V1-3)")
+
+(defvar *status-line-width* 76
+  "Column width the status line is padded to")
+
+(defvar *status-line-shown* nil
+  "Set once the status line has been drawn for the current turn")
+
+(defun display-width (string)
+  "Width of STRING in terminal columns, counting CJK characters as two"
+  (let ((width 0))
+    (loop for c across string
+          for code = (char-code c)
+          do (incf width
+                   (if (or (<= #x1100 code #x115F)
+                           (<= #x2E80 code #xA4CF)
+                           (<= #xAC00 code #xD7A3)
+                           (<= #xF900 code #xFAFF)
+                           (<= #xFE30 code #xFE6F)
+                           (<= #xFF00 code #xFF60)
+                           (<= #xFFE0 code #xFFE6))
+                       2 1)))
+    width))
+
+(defun status-line-location ()
+  "Name of the current room (global 0), translated when bilingual mode is on"
+  (let* ((name (object-name (read-variable 16)))
+         (translation (when (and *bilingual-mode* (fboundp 'translate-text))
+                        (funcall 'translate-text name))))
+    (if (and translation (not (string= translation name)))
+        (format nil "~A (~A)" translation name)
+        name)))
+
+(defun status-line-right ()
+  "Score and moves, or the time of day when the story is a time game"
+  (let ((a (to-signed (read-variable 17)))
+        (b (to-signed (read-variable 18))))
+    (if (logbitp 1 (header-flags1))
+        (format nil "Time: ~2,'0D:~2,'0D" (mod a 24) (mod b 60))
+        (format nil "Score: ~D  Moves: ~D" a b))))
+
+(defun show-status-line ()
+  "Print the status line: location on the left, score on the right"
+  (when (and *status-line-enabled* *zm* (<= (zm-version *zm*) 3))
+    (let* ((left (status-line-location))
+           (right (status-line-right))
+           (gap (- *status-line-width*
+                   (display-width left)
+                   (display-width right))))
+      (let ((line (concatenate 'string
+                               left
+                               (make-string (max 2 gap) :initial-element #\Space)
+                               right)))
+        (if (ansi-available-p)
+            (format *standard-output* "~&~C[0;~Am~A~C[0m~%~%"
+                    #\Escape *ansi-status* line #\Escape)
+            (format *standard-output* "~&~A~%~%" line))
+        (setf *ansi-current* nil))
+      (force-output *standard-output*)
+      (setf *status-line-shown* t))))
+
+(defun flush-pending-line ()
+  "Translate a line that was printed without a trailing newline.
+A story may end its prompt mid-line, as in \"Do you wish to leave the game?
+(Y is affirmative): \". Such a line is still sitting in the line buffer, so it
+has to be picked up explicitly before the translations are printed."
+  (when *bilingual-mode*
+    (buffer-line-for-translation)
+    (setf *line-buffer* "")))
+
+(defun before-prompt ()
+  "Called just before the \">\" prompt reaches the screen"
+  (flush-pending-line)
+  (flush-translation-block)
+  (unless *status-line-shown*
+    (show-status-line))
+  (setf *status-line-shown* nil))
+
 (defun zm-print (text)
   "Print text to Z-machine output"
   ;; Check for prompt character before printing
-  (when (and *bilingual-mode* (find #\> text))
-    (flush-translation-block))
+  (if (find #\> text)
+      (progn (before-prompt) (ansi-style nil))
+      (ansi-style *ansi-source*))
   (write-string text (zm-output-buffer *zm*))
   (write-string text *standard-output*)
   ;; Buffer for translation
@@ -207,8 +344,9 @@
 (defun zm-print-char (char)
   "Print a character to Z-machine output"
   ;; Check for prompt character before printing
-  (when (and *bilingual-mode* (char= char #\>))
-    (flush-translation-block))
+  (if (char= char #\>)
+      (progn (before-prompt) (ansi-style nil))
+      (ansi-style *ansi-source*))
   (write-char char (zm-output-buffer *zm*))
   (write-char char *standard-output*)
   ;; Buffer for translation (don't buffer the prompt)
@@ -236,12 +374,25 @@
         (when (cdr pair)
           (push (cdr pair) translations)))
       
-      ;; Print translations (one newline between English and translation)
+      ;; Print translations (one newline between English and translation).
+      ;; ~& first: a story may print a prompt with no trailing newline, and
+      ;; the translation must not be appended to that line.
       (when translations
+        (ansi-style *ansi-translation*)
+        (format *standard-output* "~&")
         (dolist (trans (reverse translations))
           (format *standard-output* "~A~%" trans))
         (force-output *standard-output*))))
   (setf *block-buffer* nil))
+
+(defun before-input ()
+  "Called just before the story reads a line from the player.
+Handles stories that read without printing a \">\" prompt first, and returns
+the terminal to normal so that what the player types is not styled."
+  (flush-pending-line)
+  (flush-translation-block)
+  (ansi-style nil)
+  (force-output *standard-output*))
 
 (defun zm-newline ()
   "Print a newline"

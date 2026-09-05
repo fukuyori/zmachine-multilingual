@@ -1,6 +1,6 @@
 ;;;; Japanese translations for Z-machine
 ;;;; Language: Japanese (日本語)
-;;;; Generated: 3997574964
+;;;; Generated: 3997578862
 
 (in-package :zmachine)
 
@@ -33,6 +33,7 @@
 (add-trans "cyclops" "サイクロプス")
 (add-trans "Cyclops Room" "サイクロプスの部屋")
 (add-trans "Damp Cave" "湿った洞窟")
+(add-trans "Do you wish to leave the game? (Y is affirmative):" "ゲームを去ることを望みますか？（Y は肯定）：")
 (add-trans "Dome Room" "ドーム部屋")
 (add-trans "Done." "完了。")
 (add-trans "down" "下")
@@ -128,7 +129,7 @@
 (add-trans "There was no verb in that sentence!" "その文には動詞がなかった！")
 (add-trans "There's nothing here." "ここには何もありません。")
 (add-trans "thief" "泥棒")
-(add-trans "This gives you the rank of" "これにより、あなたのランクは")
+(add-trans "This gives you the rank of Beginner." "これにより、あなたは初心者ランクとなります。")
 (add-trans "This is a dimly lit forest, with large trees all around." "ここは薄暗い森で、周囲には大きな木々が立ち並んでいます。")
 (add-trans "This is a forest, with trees in all directions. To the east, there appears to be sunlight." "ここは森です。四方八方に木々があります。東には日光が見えます。")
 (add-trans "This is a path winding through a dimly lit forest." "ここは薄暗い森を縫う小道です。")
@@ -170,7 +171,8 @@
 (add-trans "You don't have the jewel-encrusted egg." "宝石がちりばめられた卵は、あなたの手にはありません。")
 (add-trans "You hear in the distance the chirping of a song bird." "遠くから、小鳥のさえずりが聞こえてくる。")
 (add-trans "You would need a machete to go further west." "さらに西へ進むには、マチェーテが必要になるだろう。")
-(add-trans "Your score is" "あなたのスコアは")
+(add-trans "Your score is 0 (total of 350 points), in 0 moves." "あなたのスコアは 0（合計 350 ポイント）、移動回数は 0 です。")
+(add-trans "Your score is 0 (total of 350 points), in 1 move." "あなたのスコアは 0（合計 350 ポイント）で、1 回の移動です。")
 (add-trans "Your score is 5 (total of 350 points), in 25 moves." "スコアは5（合計350点）、手数は25手です。")
 (add-trans "Your score is 5 (total of 350 points), in 66 moves." "スコアは5（合計350点）で、66手でした。")
 (add-trans "Your sword is glowing with a faint blue glow." "あなたの剣がかすかに青く光っています。")

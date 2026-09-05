@@ -3,3 +3,4 @@ run.lisp
 *.sav
 /.vscode
 zmachine.zip
+translations-zork1-ja.lisp

@@ -5,6 +5,57 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.1] - 2026-09-05
+
+### Added
+
+* **The three kinds of output are now styled differently.** The original English
+  is dimmed, the translation is bright white, and the status
+  line is bright white on blue, so they can be told apart at a glance.
+  * `*ansi-enabled*` defaults to `T`; set it to `:auto` to drop the escape
+    sequences when output is not a terminal, or to `NIL` to turn colour off
+  * `*ansi-source*`, `*ansi-translation*` and `*ansi-status*` take raw SGR
+    parameters, so the scheme can be changed freely
+  * Escape sequences go only to the terminal, never into the Z-machine output
+    buffer, and the terminal is returned to normal at the prompt so that typed
+    input is not styled
+* **Status line** (V1-3). `show_status` used to be an empty stub, so the player
+  could not see where they were or what their score was. The location, score and
+  turn count are now printed on one line just before each `>` prompt.
+  * The location is translated when bilingual mode is on, shown as
+    `家の西側 (West of House)`
+  * A story flagged as a time game shows `Time: hh:mm` instead of score and moves
+  * There is no screen model in this interpreter, so the line scrolls with the
+    text rather than being pinned to the top of the screen
+  * `*status-line-enabled*` turns it off, `*status-line-width*` sets the column
+    the right-hand side is aligned to (CJK characters count as two columns)
+
+### Changed
+
+* **Partial matching is now a last resort, and is off by default.** When no
+  exact translation was cached, the interpreter used to answer with the
+  translation of any cached English phrase that made up more than a third of the
+  line - so `Forest` could answer for `Forest Path`. Worse, it ran *before* the
+  translation API and did not cache its answer, so an affected line was never
+  translated properly, no matter how many times it appeared.
+  * The order is now: exact match, case-insensitive match, API, partial match
+  * `*use-partial-matches*` defaults to `NIL`; set it to `T` to re-enable the
+    fallback for playing without a translation backend
+  * `*partial-match-threshold*` (default `0.7`) is the fraction of the line the
+    cached phrase has to cover, replacing the hardcoded one third
+  * Measured against the bundled Japanese cache, the old rule picked a wrong
+    fragment for 12 of 179 entries; the new threshold reduces that to 4, and
+    with the reordering none of them reach the screen when a backend is set up
+
+### Removed
+
+* Two bundled Japanese entries whose translation was a grammatical fragment,
+  `"This gives you the rank of"` and `"Your score is"`. Both ended mid-sentence
+  and could only ever produce truncated output. The full sentences are
+  translated properly by the API and cached. Object and room names that are
+  printed on their own, such as `brass lantern` and `West of House`, are of
+  course kept.
+
 ## [0.4.0] - 2026-09-05
 
 Local LLM translation through Ollama, and a glossary that keeps terminology

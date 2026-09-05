@@ -63,6 +63,21 @@
    #:*glossary-enabled*
    #:*glossary-enforce*
 
+   ;; Partial matching
+   #:*use-partial-matches*
+   #:*partial-match-threshold*
+
+   ;; Terminal appearance
+   #:*ansi-enabled*
+   #:*ansi-source*
+   #:*ansi-translation*
+   #:*ansi-status*
+
+   ;; Status line
+   #:show-status-line
+   #:*status-line-enabled*
+   #:*status-line-width*
+
    ;; Cache file settings
    #:set-translation-file
    #:set-glossary-file

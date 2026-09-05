@@ -76,12 +76,7 @@
                  (return-from translate-text trans)))
              *translation-table*)
     
-    ;; Strategy 3: Partial matching
-    (let ((partial (find-partial-matches trimmed)))
-      (when partial
-        (return-from translate-text partial)))
-    
-    ;; Strategy 4: API translation
+    ;; Strategy 3: API translation
     (when *use-api-translation*
       (let ((api-result (api-translate trimmed)))
         (when api-result
@@ -90,24 +85,48 @@
           (auto-save-check)  ; Save immediately after API translation
           (return-from translate-text api-result))))
     
+    ;; Strategy 4: Partial matching, last resort only.
+    ;; It returns the translation of a fragment, so the result is incomplete
+    ;; by construction. It must come after the API, or a text that happens to
+    ;; contain a cached phrase would never be translated properly at all.
+    ;; The result is deliberately not cached.
+    (let ((partial (find-partial-matches trimmed)))
+      (when partial
+        (return-from translate-text partial)))
+    
     ;; Log untranslated
     (log-untranslated trimmed)
     nil))
 
+(defvar *use-partial-matches* nil
+  "Fall back to the translation of a cached fragment when nothing else worked.
+Off by default: the answer is a fragment, so it is incomplete by construction,
+and with a translation backend configured it is never needed.")
+
+(defvar *partial-match-threshold* 0.7
+  "How much of the text the cached fragment has to cover, 0.0 to 1.0.
+The bundled translations contain sentence fragments such as
+\"This gives you the rank of\", because the story completes them at run time.
+A low threshold makes those usable but also lets a short entry stand in for a
+long sentence - \"Forest\" would answer for \"Forest Path\".")
+
 (defun find-partial-matches (text)
-  "Find partial translations"
-  (let ((matches nil)
-        (text-lower (string-downcase text)))
-    (maphash (lambda (en trans)
-               (when (and (> (length en) 5)
-                         (search (string-downcase en) text-lower))
-                 (push (cons en trans) matches)))
-             *translation-table*)
-    (when matches
-      (setf matches (sort matches #'> :key (lambda (x) (length (car x)))))
-      (let ((best (first matches)))
-        (when (> (length (car best)) (/ (length text) 3))
-          (cdr best))))))
+  "Translation of the longest cached English that is a substring of TEXT.
+Only a last resort: the answer is a fragment, so it is necessarily incomplete."
+  (when *use-partial-matches*
+    (let ((matches nil)
+          (text-lower (string-downcase text)))
+      (maphash (lambda (en trans)
+                 (when (and (> (length en) 5)
+                            (search (string-downcase en) text-lower))
+                   (push (cons en trans) matches)))
+               *translation-table*)
+      (when matches
+        (setf matches (sort matches #'> :key (lambda (x) (length (car x)))))
+        (let ((best (first matches)))
+          (when (>= (length (car best))
+                    (* *partial-match-threshold* (length text)))
+            (cdr best)))))))
 
 (defun log-untranslated (text)
   "Log untranslated text"

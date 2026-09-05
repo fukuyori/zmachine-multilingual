@@ -21,6 +21,8 @@ A Z-machine interpreter written in Common Lisp. Play classic text adventures lik
 
 * Z-machine version 1-5 support
 * Bilingual display (English + translation)
+* Status line with location, score and turn count (V1-3)
+* Original, translation and status line styled apart in the terminal
 * Auto-translation via Ollama (local LLM, any model), DeepL or Claude API
 * Glossary for consistent terminology
 * Translation caching and persistence
@@ -204,6 +206,87 @@ Avoid very common words such as `score` or `moves` - they are usually rendered w
 counters or particles and only produce false warnings. Register proper nouns and
 object names instead.
 
+### Telling the Three Kinds of Output Apart
+
+The original English, the translation and the status line are styled differently
+so they can be told apart at a glance:
+
+| | Style |
+|:--|:--|
+| Original English | Dimmed, so the translation reads as the main text |
+| Translation | Bright white |
+| Status line | Bright white on blue, like a status bar |
+
+```lisp
+(setf *ansi-enabled* nil)      ; plain text, no escape sequences
+(setf *ansi-source* "90")      ; grey original instead of dim
+(setf *ansi-translation* "0")  ; leave the translation at the terminal default
+(setf *ansi-status* "7")       ; reverse video status line
+```
+
+| Variable | Default | Description |
+|:--|:--|:--|
+| `*ansi-enabled*` | `T` | `T` always writes colour, `NIL` never does, `:auto` turns it off when output is not a terminal |
+| `*ansi-source*` | `"2"` | SGR parameters for the original English |
+| `*ansi-translation*` | `"97"` | SGR parameters for the translation |
+| `*ansi-status*` | `"44;97"` | SGR parameters for the status line |
+
+Escape sequences are written only to the terminal, never into the Z-machine
+output buffer. Set `*ansi-enabled*` to `:auto` to keep them out of redirected
+output as well, or to `NIL` to turn colour off entirely.
+
+Avoid bold (`"1"`) for the translation: terminals render bold with a bold font
+face, and most Japanese fonts have none, so only the Latin letters would come
+out bold. Brightness and colour apply evenly to every script.
+
+### Status Line
+
+In Versions 1-3 the interpreter is responsible for drawing the status line. It is
+printed on one line just before each `>` prompt, with the location on the left and
+the score on the right.
+
+```
+West of House                                             Score: 0  Moves: 0
+>
+```
+
+With bilingual mode on, the location is translated:
+
+```
+家の西側 (West of House)                                  Score: 0  Moves: 1
+>
+```
+
+A story flagged as a time game shows `Time: hh:mm` instead.
+
+| Variable | Default | Description |
+|:--|:--|:--|
+| `*status-line-enabled*` | `T` | Set to `NIL` to hide the status line |
+| `*status-line-width*` | `76` | Column the right-hand side is aligned to |
+
+This interpreter has no screen model, so the line scrolls with the text instead of
+being pinned to the top of the screen. CJK characters are counted as two columns
+when the line is padded.
+
+### How a Line Is Translated
+
+Each line the story prints is looked up in this order:
+
+1. **Exact match** in the translation cache
+2. **Case-insensitive match**
+3. **Translation API** - the result is cached and saved straight away
+4. **Partial match** - off by default, see below
+
+```lisp
+(setf *use-partial-matches* t)      ; enable the fallback
+(setf *partial-match-threshold* 0.7); how much of the line it has to cover
+```
+
+Partial matching answers with the translation of a cached English phrase that
+occurs inside the line. The answer is a fragment, so it is incomplete by
+construction, and it is never cached. It is only worth enabling when playing
+without a translation backend.
+
 ### Translation Management
 
 ```lisp
@@ -336,7 +419,7 @@ zmachine-multilingual/
 
 * **memory.lisp**: The heart of the Z-machine. Loads story files as byte arrays and provides memory access functions. Also manages global variables, local variables, and stack. Save/restore functionality is implemented here.
 
-* **text.lisp**: Handles ZSCII encoding. Implements 5-bit character decoding, alphabet shifting, and abbreviation expansion. Also serves as the connection point with the translation system.
+* **text.lisp**: Handles ZSCII encoding and the status line. Implements 5-bit character decoding, alphabet shifting, and abbreviation expansion. Also serves as the connection point with the translation system.
 
 * **objects.lisp**: Implements the Z-machine object system. Objects have a tree structure, representing containment through parent-child relationships. Provides access to attributes (32 flags) and properties (variable-length data).
 
@@ -389,7 +472,7 @@ zmachine-multilingual/
 
 ## Changelog
 
-Current version: **0.4.0**. See [CHANGELOG.md](CHANGELOG.md) for the release history.
+Current version: **0.4.1**. See [CHANGELOG.md](CHANGELOG.md) for the release history.
 
 ## Contributing
 
